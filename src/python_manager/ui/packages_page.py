@@ -8,6 +8,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -16,13 +17,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from ..core import packages
+from ..core import favorites, packages
 from ..core.interpreters import Interpreter
 from ..core.packages import Package, PipMissing, ProjectInfo
 from .state import AppState
@@ -30,6 +33,7 @@ from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, make_table, selected_payloads
 
 LATEST = "Latest"
+STAR = "★"
 _PLAIN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?$")
 
 
@@ -61,18 +65,24 @@ class PackagesPage(QWidget):
         # Installed packages
         self.filter = QLineEdit(placeholderText="Filter installed packages")
         self.filter.textChanged.connect(self._render)
-        self.table = make_table(["Package", "Version", "Latest"], stretch=0, multi=True)
+        self.favorites_only = QCheckBox("Favourites only")
+        self.favorites_only.toggled.connect(self._render)
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(self.filter, 1)
+        filter_row.addWidget(self.favorites_only)
+        self.table = make_table([STAR, "Package", "Version", "Latest"], stretch=1, multi=True)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.status = QLabel()
         self.uninstall_btn = button("Uninstall", self.uninstall)
         self.upgrade_btn = button("Upgrade", self.upgrade)
+        self.favorite_btn = button("★ Favourite", self.toggle_selected_favorites, "Mark or unmark as favourite")
         left = QWidget()
         lay = QVBoxLayout(left)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.filter)
+        lay.addLayout(filter_row)
         lay.addWidget(self.table)
         lay.addWidget(self.status)
-        lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn,
+        lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn, self.favorite_btn,
                                  button("Check for updates", self.check_updates)))
         lay.addLayout(button_row(button("Install from file…", self.install_from_file,
                                         "Install a wheel, source archive or requirements.txt"),
@@ -102,12 +112,24 @@ class PackagesPage(QWidget):
         form.addRow(self.upgrade_chk)
         form.addRow(self.deps_chk)
         form.addRow(button_row(button("Install", self.install),
-                               button("Download…", self.download, "Save wheels/sdists to a folder")))
+                               button("Download…", self.download, "Save wheels/sdists to a folder"),
+                               button("☆ Add to favourites", self.add_favorite)))
+
+        self.favorites = QListWidget()
+        self.favorites.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.favorites.itemDoubleClicked.connect(lambda item: self.name.setText(item.data(Qt.ItemDataRole.UserRole)))
+        favorites_box = QGroupBox("Favourite packages")
+        flay = QVBoxLayout(favorites_box)
+        flay.addWidget(self.favorites)
+        flay.addLayout(button_row(
+            button("Install selected", self.install_selected_favorites),
+            button("Install all missing", self.install_missing_favorites),
+            button("Remove", self.remove_selected_favorites, "Remove from favourites")))
         right = QWidget()
         rlay = QVBoxLayout(right)
         rlay.setContentsMargins(0, 0, 0, 0)
         rlay.addWidget(install_box)
-        rlay.addStretch(1)
+        rlay.addWidget(favorites_box, 1)
 
         splitter = QSplitter()
         splitter.addWidget(left)
@@ -121,6 +143,7 @@ class PackagesPage(QWidget):
         root.addWidget(splitter, 1)
 
         state.changed.connect(self._fill_targets)
+        self._render_favorites()
         self._update_buttons()
 
     # Target selection ------------------------------------------------------
@@ -184,9 +207,15 @@ class PackagesPage(QWidget):
 
     def _render(self) -> None:
         text = self.filter.text().strip().lower()
-        rows = [(p, (p.name, p.version, self._latest.get(p.name, "")))
-                for p in self._packages if text in p.name.lower()]
+        favs = {favorites.normalize(f) for f in favorites.list_favorites()}
+        only_favs = self.favorites_only.isChecked()
+        rows = []
+        for p in self._packages:
+            fav = favorites.normalize(p.name) in favs
+            if text in p.name.lower() and (fav or not only_favs):
+                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""))))
         fill_table(self.table, rows)
+        self._render_favorites()
         if self._packages:
             updates = f", {len(self._latest)} with updates" if self._latest else ""
             self.status.setText(f"{len(self._packages)} packages{updates}")
@@ -199,6 +228,7 @@ class PackagesPage(QWidget):
         has = bool(self.table.selectionModel().selectedRows())
         self.uninstall_btn.setEnabled(has)
         self.upgrade_btn.setEnabled(has)
+        self.favorite_btn.setEnabled(has)
 
     def _run(self, title: str, fn) -> None:
         """Run a modifying pip operation, then reload the package list."""
@@ -312,3 +342,53 @@ class PackagesPage(QWidget):
         interp = self.python
         self.tasks.run(f"Downloading {spec}",
                        lambda ctx: packages.download(interp.executable, spec.split(), Path(folder), ctx, with_deps))
+
+    # Favourites ------------------------------------------------------------
+
+    def _installed_names(self) -> set[str]:
+        return {favorites.normalize(p.name) for p in self._packages}
+
+    def _render_favorites(self) -> None:
+        installed = self._installed_names()
+        self.favorites.clear()
+        for name in favorites.list_favorites():
+            is_installed = favorites.normalize(name) in installed
+            item = QListWidgetItem(f"{STAR} {name}" + ("   (installed)" if is_installed else ""))
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.favorites.addItem(item)
+
+    def _selected_favorites(self) -> list[str]:
+        return [item.data(Qt.ItemDataRole.UserRole) for item in self.favorites.selectedItems()]
+
+    def toggle_selected_favorites(self) -> None:
+        for name in self._selected_names():
+            favorites.toggle(name)
+        self._render()
+
+    def add_favorite(self) -> None:
+        name = self.name.text().strip()
+        if not _PLAIN_NAME.match(name):
+            QMessageBox.information(self, "Favourites", "Enter a package name (without a version).")
+            return
+        favorites.add(name)
+        self._render()
+
+    def remove_selected_favorites(self) -> None:
+        for name in self._selected_favorites():
+            favorites.remove(name)
+        self._render()
+
+    def _install_favorites(self, names: list[str]) -> None:
+        if names:
+            self._run("Installing " + ", ".join(names), lambda py, ctx: packages.install(py, names, ctx))
+
+    def install_selected_favorites(self) -> None:
+        self._install_favorites(self._selected_favorites())
+
+    def install_missing_favorites(self) -> None:
+        installed = self._installed_names()
+        missing = [n for n in favorites.list_favorites() if favorites.normalize(n) not in installed]
+        if not missing:
+            QMessageBox.information(self, "Favourites", "All favourite packages are already installed.")
+            return
+        self._install_favorites(missing)

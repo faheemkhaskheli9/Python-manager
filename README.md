@@ -7,6 +7,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
   check for updates and export `requirements.txt`.
+- **Favourite packages** – star any package; favourites are shown with ★, can be filtered,
+  installed into any environment in one click, and optionally installed into new environments.
 - **Virtual environments** – create environments from any installed Python, manage their packages,
   open an activated terminal, add existing environments or delete them.
 

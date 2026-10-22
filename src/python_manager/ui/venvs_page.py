@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import paths, venvs
+from ..core import favorites, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .state import AppState
 from .tasks import TaskManager
@@ -45,6 +45,10 @@ class CreateEnvDialog(QDialog):
         self.upgrade = QCheckBox("Upgrade pip to the latest version")
         self.with_pip.toggled.connect(self.upgrade.setEnabled)
         self.system_site = QCheckBox("Give access to the base interpreter's site-packages")
+        count = len(favorites.list_favorites())
+        self.install_favorites = QCheckBox(f"Install favourite packages ({count})")
+        self.install_favorites.setEnabled(count > 0)
+        self.with_pip.toggled.connect(lambda on: self.install_favorites.setEnabled(on and count > 0))
 
         form = QFormLayout()
         form.addRow("Name:", self.name)
@@ -53,6 +57,7 @@ class CreateEnvDialog(QDialog):
         form.addRow(self.with_pip)
         form.addRow(self.upgrade)
         form.addRow(self.system_site)
+        form.addRow(self.install_favorites)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
@@ -135,9 +140,16 @@ class VenvsPage(QWidget):
         location = Path(dialog.location.text())
         options = dict(with_pip=dialog.with_pip.isChecked(), upgrade_deps=dialog.upgrade.isChecked(),
                        system_site_packages=dialog.system_site.isChecked())
-        self.tasks.run(f"Creating environment {name}",
-                       lambda ctx: venvs.create(name, base.executable, location, ctx=ctx, **options),
-                       lambda _: self.state.refresh())
+        extras = favorites.list_favorites() if dialog.install_favorites.isEnabled() \
+            and dialog.install_favorites.isChecked() else []
+
+        def create(ctx):
+            env = venvs.create(name, base.executable, location, ctx=ctx, **options)
+            if extras:
+                packages.install(env.executable, extras, ctx)
+            return env
+
+        self.tasks.run(f"Creating environment {name}", create, lambda _: self.state.refresh())
 
     def _add_existing(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select a virtual environment folder")

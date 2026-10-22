@@ -13,6 +13,7 @@ DEFAULTS: dict[str, Any] = {
     "show_prereleases": False,
     "show_freethreaded": False,
     "venvs": [],  # externally located environments registered by the user
+    "favorites": [],  # package names the user marked as favourite
 }
 
 _lock = threading.Lock()
