@@ -42,5 +42,9 @@ def cache_dir() -> Path:
     return _sub("cache")
 
 
+def logs_dir() -> Path:
+    return _sub("logs")
+
+
 def config_file() -> Path:
     return data_dir() / "config.json"

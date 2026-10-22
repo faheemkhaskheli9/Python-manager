@@ -6,11 +6,12 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QStringListModel, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -25,16 +26,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import deps, favorites, packages
+from ..core import deps, favorites, packages, pypi_names, security
 from ..core.interpreters import Interpreter
 from ..core.packages import Package, PipMissing, ProjectInfo
 from .deps_dialog import DependencyDialog
+from .security_dialog import SecurityDialog
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, make_table, selected_payloads
 
 LATEST = "Latest"
 STAR = "★"
+WARN = "⚠"
 _PLAIN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?$")
 
 
@@ -46,6 +49,8 @@ class PackagesPage(QWidget):
         self._latest: dict[str, str] = {}
         self._graph: deps.Graph = {}
         self._required_by: dict[str, list[str]] = {}
+        self._vulns: list[security.Vulnerability] = []
+        self._names_requested = False
         self._generation = 0
         self._pending_select: Optional[Path] = None
 
@@ -73,7 +78,7 @@ class PackagesPage(QWidget):
         filter_row = QHBoxLayout()
         filter_row.addWidget(self.filter, 1)
         filter_row.addWidget(self.favorites_only)
-        self.table = make_table([STAR, "Package", "Version", "Latest", "Required by"], stretch=4, multi=True)
+        self.table = make_table([STAR, "Package", "Version", "Latest", "Security", "Required by"], stretch=5, multi=True)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.status = QLabel()
         self.uninstall_btn = button("Uninstall", self.uninstall)
@@ -88,7 +93,9 @@ class PackagesPage(QWidget):
         lay.addWidget(self.status)
         lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn, self.favorite_btn, self.deps_btn))
         lay.addLayout(button_row(button("Check for updates", self.check_updates),
-                                 button("Upgrade all", self.upgrade_all, "Upgrade every outdated package")))
+                                 button("Upgrade all", self.upgrade_all, "Upgrade every outdated package"),
+                                 button("Security check", self.security_check,
+                                        "Look up known vulnerabilities in the OSV database")))
         lay.addLayout(button_row(button("Install from file…", self.install_from_file,
                                         "Install a wheel, source archive or requirements.txt"),
                                  button("Export requirements…", self.export_requirements)))
@@ -97,6 +104,13 @@ class PackagesPage(QWidget):
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
         self.name.returnPressed.connect(self.lookup)
         self.name.textEdited.connect(self._clear_info)
+        self.names_model = QStringListModel(self)
+        self.completer = QCompleter(self.names_model, self.name)
+        self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer.setModelSorting(QCompleter.ModelSorting.CaseInsensitivelySortedModel)
+        self.completer.setMaxVisibleItems(12)
+        self.completer.activated.connect(lambda _: self.lookup())
+        self.name.setCompleter(self.completer)
         name_row = QHBoxLayout()
         name_row.addWidget(self.name, 1)
         name_row.addWidget(button("Look up", self.lookup, "Fetch details and versions from PyPI"))
@@ -150,6 +164,19 @@ class PackagesPage(QWidget):
         state.changed.connect(self._fill_targets)
         self._render_favorites()
         self._update_buttons()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self._names_requested:
+            self._names_requested = True
+            self.load_names()
+
+    def load_names(self) -> None:
+        """Fill the name completer from the cached PyPI list, downloading it when missing or old."""
+        def done(names):
+            self.names_model.setStringList(names)
+
+        self.tasks.run("Loading PyPI package names", pypi_names.load, done, lambda _: None, foreground=False)
 
     # Target selection ------------------------------------------------------
 
@@ -222,12 +249,18 @@ class PackagesPage(QWidget):
         text = self.filter.text().strip().lower()
         favs = {favorites.normalize(f) for f in favorites.list_favorites()}
         only_favs = self.favorites_only.isChecked()
+        vulns: dict[tuple[str, str], int] = {}
+        for v in self._vulns:
+            key = (deps.normalize(v.package), v.version)
+            vulns[key] = vulns.get(key, 0) + 1
         rows = []
         for p in self._packages:
             fav = favorites.normalize(p.name) in favs
             if text in p.name.lower() and (fav or not only_favs):
                 users = ", ".join(self._required_by.get(deps.normalize(p.name), []))
-                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), users)))
+                count = vulns.get((deps.normalize(p.name), p.version), 0)
+                alert = f"{WARN} {count}" if count else ""
+                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), alert, users)))
         fill_table(self.table, rows)
         self._render_favorites()
         if self._packages:
@@ -304,6 +337,25 @@ class PackagesPage(QWidget):
             self._render()
 
         self.tasks.run(f"Checking for updates ({interp.name})", lambda _: packages.outdated(interp.executable), done)
+
+    def security_check(self) -> None:
+        interp, items = self.python, list(self._packages)
+        if interp is None or not items:
+            return
+
+        def done(vulns):
+            self._vulns = vulns
+            self._render()
+            if not vulns:
+                QMessageBox.information(self, "Security check",
+                                        f"No known vulnerabilities in {len(items)} packages of {interp.name}.")
+                return
+            dialog = SecurityDialog(vulns, interp.name, self)
+            if dialog.exec() and dialog.specs:
+                specs = dialog.specs
+                self._run("Upgrading vulnerable packages", lambda py, ctx: packages.install(py, specs, ctx))
+
+        self.tasks.run(f"Security check ({interp.name})", lambda ctx: security.scan(items, ctx), done)
 
     def ensure_pip(self) -> None:
         self._run("Installing pip", packages.ensure_pip)

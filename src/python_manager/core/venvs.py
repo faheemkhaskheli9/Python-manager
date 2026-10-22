@@ -8,11 +8,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, packages, paths
+from . import config, packages, paths, projectfile
 from .fs import remove_tree
 from .interpreters import VENV, Interpreter
 from .tasks import NULL, TaskContext, run
@@ -30,9 +31,7 @@ class VirtualEnv:
 
     @property
     def executable(self) -> Path:
-        if sys.platform == "win32":
-            return self.path / "Scripts" / "python.exe"
-        return self.path / "bin" / "python"
+        return _executable(self.path)
 
     @property
     def valid(self) -> bool:
@@ -105,7 +104,9 @@ def create(
     with_pip: bool = True,
     upgrade_deps: bool = False,
     ctx: TaskContext = NULL,
+    packages_file: Optional[Path] = None,
 ) -> VirtualEnv:
+    """Create an environment; ``packages_file`` (requirements.txt or pyproject.toml) is installed into it."""
     if not NAME_RE.match(name):
         raise ValueError("Name may contain only letters, digits, '.', '_' and '-'")
     parent = Path(location) if location else paths.envs_dir()
@@ -114,6 +115,8 @@ def create(
         raise FileExistsError(f"{target} already exists")
     parent.mkdir(parents=True, exist_ok=True)
     uv = packages.uv_path()
+    if packages_file and not uv:
+        with_pip = True  # pip installs the listed packages
     if uv:
         # uv always seeds the latest pip, so upgrade_deps has nothing left to do.
         cmd = [uv, "venv", "--python", str(base_python), str(target)]
@@ -129,12 +132,70 @@ def create(
         cmd.append("--system-site-packages")
     try:
         run(cmd, ctx)
+        if packages_file:
+            ctx.log(f"Installing packages from {Path(packages_file).name}")
+            projectfile.install_file(_executable(target), packages_file, ctx)
     except BaseException:
         if target.exists():
             remove_tree(target)
         raise
     ctx.log(f"Created virtual environment {target}")
     return register(target)
+
+
+def _executable(path: Path) -> Path:
+    if sys.platform == "win32":
+        return path / "Scripts" / "python.exe"
+    return path / "bin" / "python"
+
+
+def base_executable(env: VirtualEnv) -> Optional[Path]:
+    """The interpreter the environment was created from, if it still exists."""
+    cfg = read_pyvenv_cfg(env.path)
+    exe = cfg.get("executable")
+    if exe and Path(exe).is_file():
+        return Path(exe)
+    home = cfg.get("home")
+    if not home:
+        return None
+    if sys.platform == "win32":
+        names = ["python.exe"]
+    else:
+        short = ".".join(env.version.split(".")[:2])
+        names = [f"python{short}", "python3", "python"]
+    return next((Path(home) / n for n in names if (Path(home) / n).is_file()), None)
+
+
+def clone(
+    source: VirtualEnv,
+    name: str,
+    base_python: Optional[Path] = None,
+    location: Optional[Path] = None,
+    ctx: TaskContext = NULL,
+    **options,
+) -> VirtualEnv:
+    """New environment with the same packages as ``source``; same base Python unless one is given."""
+    base = base_python or base_executable(source)
+    if base is None:
+        raise ValueError(f"The Python that {source.name} was created from no longer exists; choose another")
+    ctx.log(f"Reading packages of {source.name}")
+    requirements = projectfile.clone_requirements(source.executable)
+    if not requirements:
+        return create(name, base, location, ctx=ctx, **options)
+    with tempfile.TemporaryDirectory() as tmp:
+        file = Path(tmp) / "requirements.txt"
+        file.write_text(requirements, encoding="utf-8")
+        return create(name, base, location, ctx=ctx, packages_file=file, **options)
+
+
+def export(env: VirtualEnv, path: Path) -> None:
+    """Write the environment's packages to requirements.txt (pinned) or pyproject.toml (top-level)."""
+    path = Path(path)
+    if path.name.endswith(".toml"):
+        text = projectfile.pyproject_for(env.executable, env.name, env.version)
+    else:
+        text = packages.freeze(env.executable)
+    path.write_text(text, encoding="utf-8")
 
 
 def delete(env: VirtualEnv, ctx: TaskContext = NULL) -> None:

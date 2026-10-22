@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..core import config, packages, paths
+from ..core import config, logs, packages, paths
 from .packages_page import PackagesPage
 from .pythons_page import PythonsPage
 from .state import AppState
@@ -83,6 +83,9 @@ class MainWindow(QMainWindow):
         open_data = QAction("Open data folder", self)
         open_data.triggered.connect(lambda: open_folder(paths.data_dir()))
         file_menu.addAction(open_data)
+        open_log = QAction("Open log file", self)
+        open_log.triggered.connect(self._open_log)
+        file_menu.addAction(open_log)
         use_uv = QAction("Use uv when installed", self, checkable=True)
         use_uv.setChecked(bool(config.get("use_uv")))
         use_uv.setToolTip("Faster installs and environment creation with uv (https://docs.astral.sh/uv/)")
@@ -110,6 +113,11 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"Using {backend} for packages and environments")
         self.packages.reload()
+
+    def _open_log(self) -> None:
+        path = logs.setup()
+        path.touch()
+        open_folder(path)
 
     def show_packages_for(self, executable) -> None:
         self.packages.select(executable)
@@ -142,7 +150,7 @@ class MainWindow(QMainWindow):
             self, "About Python Manager",
             f"<b>Python Manager {__version__}</b><p>Install Python versions, manage packages and "
             f"virtual environments.</p><p>Python builds: python-build-standalone.<br>"
-            f"Data folder: {paths.data_dir()}</p>")
+            f"Data folder: {paths.data_dir()}<br>Log file: {logs.log_file()}</p>")
 
     def closeEvent(self, event) -> None:
         if self.tasks.busy:

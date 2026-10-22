@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from python_manager.core import paths, venvs
+from python_manager.core import packages, paths, venvs
 from python_manager.core.tasks import CommandError
 
 
@@ -51,3 +51,41 @@ def test_failed_create_cleans_up(backend, tmp_path):
 def test_create_with_pip(backend, tmp_path):
     env = venvs.create("seeded", Path(sys.executable), tmp_path, with_pip=True)
     assert (env.executable.parent / ("pip.exe" if sys.platform == "win32" else "pip")).exists()
+
+
+def test_base_executable_and_plain_clone(backend, tmp_path):
+    env = venvs.create("src", Path(sys.executable), tmp_path, with_pip=False)
+    base = venvs.base_executable(env)
+    assert base is not None and base.is_file()
+
+    copy = venvs.clone(env, "copy", location=tmp_path, with_pip=False)
+    assert copy.valid and copy.version == env.version
+
+
+def test_create_from_file_and_clone(backend, tmp_path, monkeypatch):
+    from test_packages import _build_wheel
+
+    wheel = _build_wheel(tmp_path)
+    req = tmp_path / "requirements.txt"
+    req.write_text(f"--no-index\n{wheel}\n", encoding="utf-8")
+    env = venvs.create("from-file", Path(sys.executable), tmp_path, with_pip=False, packages_file=req)
+    assert "pm-demo" in {p.name.lower() for p in packages.list_packages(env.executable)}
+
+    out = tmp_path / "exported.txt"
+    venvs.export(env, out)
+    assert "pm-demo" in out.read_text(encoding="utf-8")
+
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    monkeypatch.setenv("PIP_FIND_LINKS", str(tmp_path))
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setenv("UV_FIND_LINKS", str(tmp_path))
+    copy = venvs.clone(env, "copy", location=tmp_path, with_pip=False)
+    assert "pm-demo" in {p.name.lower() for p in packages.list_packages(copy.executable)}
+
+
+def test_failed_package_install_removes_env(backend, tmp_path):
+    req = tmp_path / "requirements.txt"
+    req.write_text("--no-index\nthis-package-does-not-exist-pm\n", encoding="utf-8")
+    with pytest.raises(CommandError):
+        venvs.create("bad-reqs", Path(sys.executable), tmp_path, packages_file=req)
+    assert not (tmp_path / "bad-reqs").exists()

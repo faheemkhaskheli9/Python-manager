@@ -9,7 +9,10 @@ from typing import Any, Callable, Optional
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QMessageBox, QWidget
 
+from ..core import logs
 from ..core.tasks import Cancelled, TaskContext
+
+_log = logs.get("tasks")
 
 
 class _Signals(QObject):
@@ -88,6 +91,7 @@ class TaskManager(QObject):
         )
         self._jobs[job_id] = _Entry(title, foreground, ctx, on_done, on_error)
         if foreground:
+            _log.info("Started: %s", title)
             self.log.emit(f"▶ {title}")
             self.started.emit(title)
         self._pool.start(_Job(job_id, fn, signals, ctx))
@@ -102,6 +106,7 @@ class TaskManager(QObject):
     def _on_log(self, job_id: int, message: str) -> None:
         entry = self._jobs.get(job_id)
         if entry and entry.foreground:
+            _log.info("  %s", message)
             self.log.emit(message)
 
     @Slot(int, int, int)
@@ -116,6 +121,7 @@ class TaskManager(QObject):
         if entry is None:
             return
         if entry.foreground:
+            _log.info("Done: %s", entry.title)
             self.log.emit(f"✔ {entry.title}: done")
             self.finished.emit(f"{entry.title}: done")
         if entry.on_done:
@@ -126,6 +132,10 @@ class TaskManager(QObject):
         entry = self._jobs.pop(job_id, None)
         if entry is None:
             return
+        if cancelled:
+            _log.info("Cancelled: %s", entry.title)
+        else:
+            _log.error("Failed: %s\n%s", entry.title, message)
         if entry.foreground:
             self.log.emit(f"✖ {entry.title}: {message}")
             self.finished.emit(f"{entry.title}: {'cancelled' if cancelled else 'failed'}")
