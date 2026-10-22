@@ -15,6 +15,10 @@ DEFAULTS: dict[str, Any] = {
     "venvs": [],  # externally located environments registered by the user
     "favorites": [],  # package names the user marked as favourite
     "use_uv": True,  # use uv for packages and environments when it is installed
+    "auto_check": True,  # check environments for outdated and vulnerable packages in the background
+    "auto_check_hours": 24,
+    "last_health_check": 0,
+    "projects": [],  # project folders added on the Projects page
 }
 
 _lock = threading.Lock()

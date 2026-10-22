@@ -19,6 +19,8 @@ from .interpreters import VENV, Interpreter
 from .tasks import NULL, TaskContext, run
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# Conventional folder names of an environment inside a project; shown as "<project>/<folder>".
+PROJECT_ENV_NAMES = (".venv", "venv", "env")
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,10 @@ def load(path: Path, managed: bool) -> VirtualEnv:
     cfg = read_pyvenv_cfg(path)
     version = cfg.get("version_info") or cfg.get("version") or "?"
     base = cfg.get("executable") or cfg.get("home", "")
-    return VirtualEnv(path.name, path, version, base, managed)
+    name = path.name
+    if not managed and name in PROJECT_ENV_NAMES:
+        name = f"{path.parent.name}/{name}"
+    return VirtualEnv(name, path, version, base, managed)
 
 
 def _registered() -> list[str]:
@@ -110,10 +115,23 @@ def create(
     if not NAME_RE.match(name):
         raise ValueError("Name may contain only letters, digits, '.', '_' and '-'")
     parent = Path(location) if location else paths.envs_dir()
-    target = parent / name
+    return create_at(parent / name, base_python, system_site_packages, with_pip, upgrade_deps, ctx, packages_file)
+
+
+def create_at(
+    target: Path,
+    base_python: Path,
+    system_site_packages: bool = False,
+    with_pip: bool = True,
+    upgrade_deps: bool = False,
+    ctx: TaskContext = NULL,
+    packages_file: Optional[Path] = None,
+) -> VirtualEnv:
+    """Create an environment in the folder ``target`` (any name, e.g. a project's ``.venv``)."""
+    target = Path(target)
     if target.exists():
         raise FileExistsError(f"{target} already exists")
-    parent.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     uv = packages.uv_path()
     if packages_file and not uv:
         with_pip = True  # pip installs the listed packages

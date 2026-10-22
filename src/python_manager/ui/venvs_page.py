@@ -125,7 +125,7 @@ class VenvsPage(QWidget):
         super().__init__()
         self.state, self.tasks, self.manage_packages = state, tasks, manage_packages
 
-        self.table = make_table(["Name", "Python", "Location", "Base interpreter"], stretch=2)
+        self.table = make_table(["Name", "Python", "Updates", "Location", "Base interpreter"], stretch=3)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.doubleClicked.connect(lambda _: self._manage())
         self.activate_hint = QLineEdit(readOnly=True, placeholderText="Activation command")
@@ -149,11 +149,17 @@ class VenvsPage(QWidget):
         layout.addWidget(self.activate_hint)
         layout.addLayout(button_row(*self.selection_buttons))
         state.changed.connect(self._render)
+        state.health_changed.connect(self._render)
         self._update_buttons()
 
+    def _status(self, env: VirtualEnv) -> str:
+        report = self.state.health.get(str(env.executable))
+        return report.summary if report else ""
+
     def _render(self) -> None:
-        rows = [(e, (e.name, e.version, str(e.path), e.base or "?")) for e in self.state.envs]
+        rows = [(e, (e.name, e.version, self._status(e), str(e.path), e.base or "?")) for e in self.state.envs]
         fill_table(self.table, rows)
+        self.table.setToolTip("Updates: result of the last scheduled check (File → Check environments now)")
         self._update_buttons()
 
     def _selected(self) -> VirtualEnv:

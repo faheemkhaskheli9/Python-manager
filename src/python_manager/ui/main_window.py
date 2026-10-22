@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QDockWidget,
@@ -14,11 +14,14 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QStackedWidget,
+    QSystemTrayIcon,
 )
 
 from .. import __version__
-from ..core import config, logs, packages, paths
+from ..core import config, health, logs, packages, paths
+from .disk_page import DiskPage
 from .packages_page import PackagesPage
+from .projects_page import ProjectsPage
 from .pythons_page import PythonsPage
 from .state import AppState
 from .tasks import TaskManager
@@ -38,11 +41,14 @@ class MainWindow(QMainWindow):
         self.pythons = PythonsPage(self.state, self.tasks)
         self.packages = PackagesPage(self.state, self.tasks)
         self.venvs = VenvsPage(self.state, self.tasks, self.show_packages_for)
+        self.projects = ProjectsPage(self.state, self.tasks, self.show_packages_for)
+        self.disk = DiskPage(self.state, self.tasks)
 
         self.stack = QStackedWidget()
         self.nav = QListWidget()
         for title, page in (("Python Versions", self.pythons), ("Packages", self.packages),
-                            ("Virtual Environments", self.venvs)):
+                            ("Virtual Environments", self.venvs), ("Projects", self.projects),
+                            ("Disk Usage", self.disk)):
             self.nav.addItem(title)
             self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
@@ -50,7 +56,9 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         splitter.addWidget(self.nav)
         splitter.addWidget(self.stack)
+        splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([190, 1000])
         self.setCentralWidget(splitter)
 
         self.log = LogView()
@@ -74,8 +82,18 @@ class MainWindow(QMainWindow):
         self.tasks.progress.connect(self._task_progress)
         self.tasks.finished.connect(self._task_finished)
 
+        self.tray: QSystemTrayIcon | None = None
+        self._checking = False
+        self.check_timer = QTimer(self, interval=30 * 60 * 1000)  # is a scheduled check due?
+        self.check_timer.timeout.connect(self._maybe_check)
+        self.check_timer.start()
+        self.state.health_changed.connect(self._update_nav_badges)
+        self.state.changed.connect(self._update_nav_badges)
+        self.state.changed.connect(self._first_check)
+
         self._build_menu(dock)
         self.nav.setCurrentRow(0)
+        self._update_nav_badges()
         self.state.refresh(include_system=True)
 
     def _build_menu(self, dock: QDockWidget) -> None:
@@ -91,6 +109,15 @@ class MainWindow(QMainWindow):
         use_uv.setToolTip("Faster installs and environment creation with uv (https://docs.astral.sh/uv/)")
         use_uv.toggled.connect(self._set_use_uv)
         file_menu.addAction(use_uv)
+        file_menu.addSeparator()
+        check_now = QAction("Check environments now", self)
+        check_now.setToolTip("Look for outdated and vulnerable packages in every environment")
+        check_now.triggered.connect(lambda: self.check_environments(manual=True))
+        file_menu.addAction(check_now)
+        auto_check = QAction("Check environments daily", self, checkable=True)
+        auto_check.setChecked(bool(config.get("auto_check")))
+        auto_check.toggled.connect(lambda on: config.set("auto_check", on))
+        file_menu.addAction(auto_check)
         file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -113,6 +140,63 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"Using {backend} for packages and environments")
         self.packages.reload()
+
+    # Scheduled checks --------------------------------------------------------
+
+    def _first_check(self) -> None:
+        self.state.changed.disconnect(self._first_check)
+        self._maybe_check()
+
+    def _maybe_check(self) -> None:
+        if health.is_due() and not self.state.loading:
+            self.check_environments(manual=False)
+
+    def check_environments(self, manual: bool) -> None:
+        """Check environments for outdated and vulnerable packages; notify when something is found."""
+        if self._checking:
+            return
+        targets = [i.executable for i in self.state.checked_interpreters()]
+        if not targets:
+            if manual:
+                self.status_label.setText("No environments to check")
+            return
+
+        def done(reports):
+            self._checking = False
+            self.state.set_health(reports)
+            message = health.summarize(reports[str(t)] for t in targets if str(t) in reports)
+            self.status_label.setText(message or f"Checked {len(targets)} environments: all up to date")
+            if message:
+                self._notify("Packages need attention", message)
+
+        def failed(message):
+            self._checking = False
+            self.status_label.setText(f"Environment check failed: {message.splitlines()[0]}")
+
+        self._checking = True
+        started = self.tasks.run(f"Checking {len(targets)} environments",
+                                 lambda ctx: health.check_all(targets, ctx), done, failed, foreground=manual)
+        if not started:
+            self._checking = False
+
+    def _notify(self, title: str, message: str) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        if self.tray is None:
+            self.tray = QSystemTrayIcon(self.windowIcon() if not self.windowIcon().isNull()
+                                        else self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon),
+                                        self)
+            self.tray.setToolTip("Python Manager")
+            self.tray.messageClicked.connect(lambda: (self.nav.setCurrentRow(2), self.showNormal(), self.raise_()))
+            self.tray.show()
+        self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning)
+
+    def _update_nav_badges(self) -> None:
+        reports = (self.state.health.get(str(e.executable)) for e in self.state.envs)
+        flagged = sum(bool(r and r.needs_attention) for r in reports)
+        item = self.nav.item(2)
+        item.setText(f"Virtual Environments ({flagged})" if flagged else "Virtual Environments")
+        item.setToolTip(f"{flagged} environments have outdated or vulnerable packages" if flagged else "")
 
     def _open_log(self) -> None:
         path = logs.setup()

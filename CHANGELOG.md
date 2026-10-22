@@ -9,6 +9,25 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+### Added
+- Projects page: add a folder with `pyproject.toml`, `requirements.txt` or `uv.lock`, see which
+  requirements are missing or have the wrong version in its environment, create `.venv` and sync
+  it (`uv sync --frozen` when a `uv.lock` and uv are present). ([#3])
+- Scheduled checks: every environment is checked daily in the background for outdated and
+  vulnerable packages; results appear in a new *Updates* column, as a count in the sidebar, in the
+  Packages page and as a desktop notification. *File → Check environments now* runs it on
+  demand. ([#3])
+- Disk Usage page: sizes of environments, installed Pythons, the download cache and the pip and uv
+  caches, with buttons to clean a cache or delete an environment. ([#3])
+- Screenshots in the README. ([#3])
+
+### Changed
+- Environments named `.venv`, `venv` or `env` outside the app folder are listed as
+  `<project>/.venv`. ([#3])
+
+### Fixed
+- Security results of one environment no longer show up after switching to another. ([#3])
+
 ## [0.2.0] - 2026-10-22
 
 ### Added
@@ -61,6 +80,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [0.2.0]: https://github.com/faheemkhaskheli9/python-manager/compare/3653ddf...v0.2.0
 [0.1.0]: https://github.com/faheemkhaskheli9/python-manager/commits/3653ddf
 [#1]: https://github.com/faheemkhaskheli9/python-manager/pull/1
+[#3]: https://github.com/faheemkhaskheli9/python-manager/pull/3
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf

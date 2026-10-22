@@ -211,6 +211,7 @@ class PackagesPage(QWidget):
     def reload(self) -> None:
         interp = self.python
         self._packages, self._latest, self._graph, self._required_by = [], {}, {}, {}
+        self._vulns = []
         self.pip_bar.hide()
         self._render()
         if interp is None:
@@ -224,6 +225,10 @@ class PackagesPage(QWidget):
             if generation == self._generation:
                 self._packages, self._graph = result
                 self._required_by = deps.required_by(self._graph)
+                report = self.state.health.get(str(interp.executable))
+                if report:  # results of the last scheduled check that still apply
+                    report = report.current(self._packages)
+                    self._latest, self._vulns = dict(report.outdated), list(report.vulns)
                 self._render()
 
         def failed(message):
