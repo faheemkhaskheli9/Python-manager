@@ -21,8 +21,26 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   open an activated terminal, add existing environments or delete them. Clone an environment
   (optionally onto another Python), export it as `requirements.txt` (pinned) or `pyproject.toml`
   (top-level packages), and create a new environment from either file.
+- **Projects** – add a project folder with `pyproject.toml`, `requirements.txt` or `uv.lock`. The app
+  finds its environment (`.venv`, `venv` or `env`) or creates `.venv`, lists each requirement as
+  OK, missing or wrong version, and syncs it in one click (`uv sync --frozen` when there is a
+  `uv.lock` and uv is installed).
+- **Scheduled checks** – once a day every environment is checked in the background for outdated and
+  vulnerable packages. Results show in an *Updates* column, as a count next to
+  *Virtual Environments* and in a desktop notification (*File → Check environments now /
+  Check environments daily*).
+- **Disk usage** – size of every environment, installed Python, the download cache and the pip and
+  uv caches; clean a cache or delete an environment from the same page.
 - **Log file** – everything shown in the Output panel, plus errors, is written to a rotating log
   (*File → Open log file*) to attach to bug reports.
+
+## Screenshots
+
+| Packages | Projects |
+|---|---|
+| ![Packages](docs/screenshots/packages.png) | ![Projects](docs/screenshots/projects.png) |
+| **Virtual environments** | **Disk usage** |
+| ![Virtual environments](docs/screenshots/virtual-environments.png) | ![Disk usage](docs/screenshots/disk-usage.png) |
 
 ## Run
 
@@ -45,6 +63,9 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |
 | Virtual environments | `uv venv` when uv is available, otherwise standard library `venv`. |
+| Projects | Requirements are read from `requirements.txt` (following `-r` includes) or `pyproject.toml` and compared with the environment's installed metadata; markers are evaluated for the environment's Python. |
+| Scheduled checks | `pip list --outdated` plus the security check for each environment and app-installed Python, at most once a day; results are cached in `cache/health.json`. |
+| Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
 App data (installed Pythons, environments, download cache, `config.json`, `logs/`):
 
@@ -61,7 +82,8 @@ when listing many releases.
 
 ```
 src/python_manager/
-  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projectfile, security, logs
+  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
+          # security, health, disk, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```

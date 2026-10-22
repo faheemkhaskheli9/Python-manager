@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Optional, Sequence
 
 from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QDesktopServices, QFontDatabase
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFontDatabase
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -35,20 +35,49 @@ def make_table(headers: Sequence[str], stretch: int = -1, multi: bool = False) -
     return table
 
 
-def fill_table(table: QTableWidget, rows: Iterable[tuple[Any, Sequence[str]]]) -> None:
-    """Replace table contents. Each row is (payload, cell texts); payload is kept on column 0."""
+class SortedItem(QTableWidgetItem):
+    """A cell that sorts by a key other than its text, e.g. a size in bytes."""
+
+    def __init__(self, text: str, key: Any):
+        super().__init__(text)
+        self.key = key
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, SortedItem):
+            return self.key < other.key
+        return super().__lt__(other)
+
+
+def fill_table(table: QTableWidget, rows: Iterable[tuple[Any, Sequence[Any]]]) -> None:
+    """Replace table contents. Each row is (payload, cells); payload is kept on column 0.
+
+    A cell is its text, or a (text, sort key) pair.
+    """
     table.setSortingEnabled(False)
     table.setRowCount(0)
     for payload, cells in rows:
         row = table.rowCount()
         table.insertRow(row)
-        for col, text in enumerate(cells):
-            item = QTableWidgetItem(str(text))
+        for col, cell in enumerate(cells):
+            if isinstance(cell, tuple):
+                text = cell[0]
+                item = SortedItem(str(text), cell[1])
+            else:
+                text = cell
+                item = QTableWidgetItem(str(text))
             item.setToolTip(str(text))
             if col == 0:
                 item.setData(Qt.ItemDataRole.UserRole, payload)
             table.setItem(row, col, item)
     table.setSortingEnabled(True)
+
+
+def color_rows(table: QTableWidget, column: int, colors: dict[str, str]) -> None:
+    """Colour each row's ``column`` text by its value, e.g. {"Missing": "#c62828"}."""
+    for row in range(table.rowCount()):
+        item = table.item(row, column)
+        if item and item.text() in colors:
+            item.setForeground(QBrush(QColor(colors[item.text()])))
 
 
 def selected_payloads(table: QTableWidget) -> list[Any]:
