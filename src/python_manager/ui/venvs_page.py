@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -27,19 +28,31 @@ from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, make_table, open_folder, selected_payload
 
 
+FILE_FILTER = "requirements.txt or pyproject.toml (*.txt *.toml);;All files (*)"
+
+
 class CreateEnvDialog(QDialog):
-    def __init__(self, state: AppState, parent: QWidget):
+    """Create a new environment, or clone ``source`` when given."""
+
+    def __init__(self, state: AppState, parent: QWidget, source: Optional[VirtualEnv] = None,
+                 packages_file: str = ""):
         super().__init__(parent)
-        self.setWindowTitle("Create virtual environment")
+        self.setWindowTitle(f"Clone {source.name}" if source else "Create virtual environment")
         self.setMinimumWidth(520)
-        self.name = QLineEdit(placeholderText="my-project")
+        self.name = QLineEdit(f"{source.name}-copy" if source else "", placeholderText="my-project")
         self.base = QComboBox()
         for interp in state.interpreters(include_envs=False):
             self.base.addItem(interp.label, interp)
-        self.location = QLineEdit(str(paths.envs_dir()))
+        if source:
+            self._select_base(venvs.base_executable(source))
+        self.location = QLineEdit(str(source.path.parent if source else paths.envs_dir()))
         loc_row = QHBoxLayout()
         loc_row.addWidget(self.location, 1)
         loc_row.addWidget(button("Browse…", self._browse))
+        self.packages_file = QLineEdit(packages_file, placeholderText="Optional requirements.txt or pyproject.toml")
+        file_row = QHBoxLayout()
+        file_row.addWidget(self.packages_file, 1)
+        file_row.addWidget(button("Browse…", self._browse_file))
         self.with_pip = QCheckBox("Install pip")
         self.with_pip.setChecked(True)
         self.upgrade = QCheckBox("Upgrade pip to the latest version")
@@ -54,6 +67,10 @@ class CreateEnvDialog(QDialog):
         form.addRow("Name:", self.name)
         form.addRow("Python:", self.base)
         form.addRow("Location:", loc_row)
+        if source:
+            form.addRow("Packages:", QLabel(f"Same as {source.name}"))
+        else:
+            form.addRow("Packages from:", file_row)
         form.addRow(self.with_pip)
         form.addRow(self.upgrade)
         form.addRow(self.system_site)
@@ -66,6 +83,20 @@ class CreateEnvDialog(QDialog):
         if self.base.count() == 0:
             layout.addWidget(QLabel("No Python found. Install one on the Python Versions page first."))
         layout.addWidget(buttons)
+
+    def _select_base(self, executable: Optional[Path]) -> None:
+        if executable is None:
+            return
+        target = os.path.realpath(executable)
+        for i in range(self.base.count()):
+            if os.path.realpath(self.base.itemData(i).executable) == target:
+                self.base.setCurrentIndex(i)
+                return
+
+    def _browse_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Install packages from", "", FILE_FILTER)
+        if path:
+            self.packages_file.setText(path)
 
     def _browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Parent folder", self.location.text())
@@ -82,6 +113,10 @@ class CreateEnvDialog(QDialog):
         if (Path(self.location.text()) / name).exists():
             QMessageBox.warning(self, "Already exists", "A folder with that name already exists there.")
             return
+        file = self.packages_file.text().strip()
+        if file and not Path(file).is_file():
+            QMessageBox.warning(self, "File not found", f"{file} does not exist.")
+            return
         self.accept()
 
 
@@ -97,13 +132,18 @@ class VenvsPage(QWidget):
         self.unregister_btn = button("Remove from list", self._unregister, "Forget the environment without deleting files")
         self.selection_buttons = [
             button("Manage packages", self._manage),
+            button("Clone…", self.clone, "New environment with the same packages"),
+            button("Export…", self._export, "Save the packages as requirements.txt or pyproject.toml"),
             button("Open terminal", self._terminal, "Open a terminal with the environment activated"),
             button("Open folder", lambda: self._with_selected(lambda e: open_folder(e.path))),
             self.unregister_btn,
             button("Delete", self._delete),
         ]
         layout = QVBoxLayout(self)
-        layout.addLayout(button_row(button("Create…", self.create), button("Add existing…", self._add_existing),
+        layout.addLayout(button_row(button("Create…", lambda: self.create()),
+                                    button("Create from file…", self._create_from_file,
+                                           "New environment from a requirements.txt or pyproject.toml"),
+                                    button("Add existing…", self._add_existing),
                                     button("Refresh", lambda: self.state.refresh())))
         layout.addWidget(self.table)
         layout.addWidget(self.activate_hint)
@@ -132,24 +172,54 @@ class VenvsPage(QWidget):
             self.unregister_btn.setEnabled(not env.managed)
         self.activate_hint.setText(venvs.activation_command(env) if env else "")
 
-    def create(self) -> None:
-        dialog = CreateEnvDialog(self.state, self)
+    def create(self, source: Optional[VirtualEnv] = None, packages_file: str = "") -> None:
+        dialog = CreateEnvDialog(self.state, self, source, packages_file)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         name, base = dialog.name.text().strip(), dialog.base.currentData()
         location = Path(dialog.location.text())
         options = dict(with_pip=dialog.with_pip.isChecked(), upgrade_deps=dialog.upgrade.isChecked(),
                        system_site_packages=dialog.system_site.isChecked())
+        file = dialog.packages_file.text().strip()
+        if file and not source:
+            options["packages_file"] = Path(file)
         extras = favorites.list_favorites() if dialog.install_favorites.isEnabled() \
             and dialog.install_favorites.isChecked() else []
 
         def create(ctx):
-            env = venvs.create(name, base.executable, location, ctx=ctx, **options)
+            if source:
+                env = venvs.clone(source, name, base.executable, location, ctx=ctx, **options)
+            else:
+                env = venvs.create(name, base.executable, location, ctx=ctx, **options)
             if extras:
                 packages.install(env.executable, extras, ctx)
             return env
 
-        self.tasks.run(f"Creating environment {name}", create, lambda _: self.state.refresh())
+        verb = f"Cloning {source.name} to" if source else "Creating environment"
+        self.tasks.run(f"{verb} {name}", create, lambda _: self.state.refresh())
+
+    def clone(self) -> None:
+        env = self._selected()
+        if env:
+            self.create(source=env)
+
+    def _create_from_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Create environment from", "", FILE_FILTER)
+        if path:
+            self.create(packages_file=path)
+
+    def _export(self) -> None:
+        env = self._selected()
+        if not env:
+            return
+        path, chosen = QFileDialog.getSaveFileName(
+            self, f"Export {env.name}", "requirements.txt",
+            "requirements.txt (pinned versions) (*.txt);;pyproject.toml (top-level packages) (*.toml)")
+        if not path:
+            return
+        if "toml" in chosen and not path.endswith(".toml"):
+            path = str(Path(path).with_name("pyproject.toml"))
+        self.tasks.run(f"Exporting {env.name}", lambda _: venvs.export(env, Path(path)))
 
     def _add_existing(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select a virtual environment folder")

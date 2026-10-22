@@ -15,7 +15,11 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Favourite packages** – star any package; favourites are shown with ★, can be filtered,
   installed into any environment in one click, and optionally installed into new environments.
 - **Virtual environments** – create environments from any installed Python, manage their packages,
-  open an activated terminal, add existing environments or delete them.
+  open an activated terminal, add existing environments or delete them. Clone an environment
+  (optionally onto another Python), export it as `requirements.txt` (pinned) or `pyproject.toml`
+  (top-level packages), and create a new environment from either file.
+- **Log file** – everything shown in the Output panel, plus errors, is written to a rotating log
+  (*File → Open log file*) to attach to bug reports.
 
 ## Run
 
@@ -37,7 +41,7 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |
 | Virtual environments | `uv venv` when uv is available, otherwise standard library `venv`. |
 
-App data (installed Pythons, environments, download cache, `config.json`):
+App data (installed Pythons, environments, download cache, `config.json`, `logs/`):
 
 | OS | Folder |
 |---|---|
@@ -52,7 +56,7 @@ when listing many releases.
 
 ```
 src/python_manager/
-  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, interpreters
+  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projectfile, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```
@@ -63,9 +67,24 @@ tests/    # pytest suite for core (runs offline)
 pytest
 ```
 
-## Build a standalone executable
+## Download
+
+Ready-to-run builds for Windows, macOS (Apple silicon and Intel) and Linux are attached to each
+[GitHub release](https://github.com/faheemkhaskheli9/python-manager/releases). Unzip and run
+*Python Manager*; no Python installation is needed.
+
+## Release
+
+Push a version tag; the `release` workflow builds every platform with PyInstaller and publishes
+a release with the archives:
 
 ```bash
-pip install pyinstaller
-pyinstaller --windowed --name "Python Manager" -p src src/python_manager/__main__.py
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Build locally:
+
+```bash
+pip install . pyinstaller
+pyinstaller --noconfirm --windowed --name "Python Manager" --collect-submodules python_manager src/python_manager/__main__.py
 ```
