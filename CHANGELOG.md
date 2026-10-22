@@ -9,6 +9,8 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Added
 - Release builds: pushing a `v*` tag builds the app with PyInstaller for Windows x64, macOS
   (Apple silicon and Intel) and Linux x64 and publishes a GitHub release with the archives.
@@ -55,7 +57,8 @@ First version. These changes were committed directly to `main`, before pull requ
   unused. ([3653ddf])
 - Offline pytest suite and a CI workflow for Windows, macOS and Linux. ([a036314])
 
-[Unreleased]: https://github.com/faheemkhaskheli9/python-manager/compare/3653ddf...HEAD
+[Unreleased]: https://github.com/faheemkhaskheli9/python-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/faheemkhaskheli9/python-manager/compare/3653ddf...v0.2.0
 [0.1.0]: https://github.com/faheemkhaskheli9/python-manager/commits/3653ddf
 [#1]: https://github.com/faheemkhaskheli9/python-manager/pull/1
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
