@@ -10,6 +10,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Loading indicators: a spinner over each list while it loads (installed and available Pythons,
+  packages, environments, project requirements, disk usage), a status bar indicator for background
+  work, and "checking…" in the *Updates* column while environments are checked. ([#4])
 - Projects page: add a folder with `pyproject.toml`, `requirements.txt` or `uv.lock`, see which
   requirements are missing or have the wrong version in its environment, create `.venv` and sync
   it (`uv sync --frozen` when a `uv.lock` and uv are present). ([#3])
@@ -22,6 +25,13 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 - Screenshots in the README. ([#3])
 
 ### Changed
+- Faster package lists: names, versions and dependencies are read from installed metadata in one
+  call instead of `pip list` plus a second call (about 3× faster with pip); they also load when
+  pip is missing. ([#4])
+- Python build lists, scheduled checks, disk usage sizes and project comparisons run their
+  requests in parallel. ([#4])
+- Filtering the package list hides rows instead of rebuilding the table; tables repaint once
+  after filling; settings are read from disk only when the file changed. ([#4])
 - Environments named `.venv`, `venv` or `env` outside the app folder are listed as
   `<project>/.venv`. ([#3])
 
@@ -81,6 +91,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [0.1.0]: https://github.com/faheemkhaskheli9/python-manager/commits/3653ddf
 [#1]: https://github.com/faheemkhaskheli9/python-manager/pull/1
 [#3]: https://github.com/faheemkhaskheli9/python-manager/pull/3
+[#4]: https://github.com/faheemkhaskheli9/python-manager/pull/4
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf

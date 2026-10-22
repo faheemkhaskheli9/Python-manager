@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -113,10 +114,12 @@ def scan(ctx: TaskContext = NULL) -> list[Usage]:
     if uv_dir:
         items.append((UV_CACHE, "uv", uv_dir, None))
     result = []
-    for done, (kind, name, path, payload) in enumerate(items):
-        ctx.check()
-        ctx.progress(done, len(items))
-        result.append(Usage(kind, name, path, dir_size(path), payload))
+    with ThreadPoolExecutor(max_workers=4) as pool:  # mostly waiting on the disk
+        sizes = pool.map(lambda item: dir_size(item[2]), items)
+        for done, ((kind, name, path, payload), size) in enumerate(zip(items, sizes), 1):
+            ctx.check()
+            ctx.progress(done, len(items))
+            result.append(Usage(kind, name, path, size, payload))
     return sorted(result, key=lambda u: u.size, reverse=True)
 
 

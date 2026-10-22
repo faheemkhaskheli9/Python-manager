@@ -25,7 +25,7 @@ from ..core import favorites, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, make_table, open_folder, selected_payload
+from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
 
 
 FILE_FILTER = "requirements.txt or pyproject.toml (*.txt *.toml);;All files (*)"
@@ -128,6 +128,7 @@ class VenvsPage(QWidget):
         self.table = make_table(["Name", "Python", "Updates", "Location", "Base interpreter"], stretch=3)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.doubleClicked.connect(lambda _: self._manage())
+        self.overlay = loading_overlay(self.table)
         self.activate_hint = QLineEdit(readOnly=True, placeholderText="Activation command")
         self.unregister_btn = button("Remove from list", self._unregister, "Forget the environment without deleting files")
         self.selection_buttons = [
@@ -150,9 +151,14 @@ class VenvsPage(QWidget):
         layout.addLayout(button_row(*self.selection_buttons))
         state.changed.connect(self._render)
         state.health_changed.connect(self._render)
+        state.loading_changed.connect(
+            lambda on: self.overlay.start("Looking for environments…") if on and not self.table.rowCount()
+            else self.overlay.stop())
         self._update_buttons()
 
     def _status(self, env: VirtualEnv) -> str:
+        if self.state.health_checking:
+            return "checking…"
         report = self.state.health.get(str(env.executable))
         return report.summary if report else ""
 

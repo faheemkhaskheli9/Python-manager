@@ -54,6 +54,7 @@ class TaskManager(QObject):
     progress = Signal(int, int)
     finished = Signal(str)
     log = Signal(str)
+    background = Signal(list)  # titles of the running background tasks
 
     def __init__(self, window: QWidget):
         super().__init__(window)
@@ -90,12 +91,20 @@ class TaskManager(QObject):
             progress=lambda done, total: signals.progress.emit(job_id, done, total),
         )
         self._jobs[job_id] = _Entry(title, foreground, ctx, on_done, on_error)
+        if not foreground:
+            self._emit_background()
         if foreground:
             _log.info("Started: %s", title)
             self.log.emit(f"▶ {title}")
             self.started.emit(title)
         self._pool.start(_Job(job_id, fn, signals, ctx))
         return True
+
+    def background_titles(self) -> list[str]:
+        return [e.title for e in self._jobs.values() if not e.foreground]
+
+    def _emit_background(self) -> None:
+        self.background.emit(self.background_titles())
 
     def cancel(self) -> None:
         for entry in self._jobs.values():
@@ -120,6 +129,8 @@ class TaskManager(QObject):
         entry = self._jobs.pop(job_id, None)
         if entry is None:
             return
+        if not entry.foreground:
+            self._emit_background()
         if entry.foreground:
             _log.info("Done: %s", entry.title)
             self.log.emit(f"✔ {entry.title}: done")
@@ -132,6 +143,8 @@ class TaskManager(QObject):
         entry = self._jobs.pop(job_id, None)
         if entry is None:
             return
+        if not entry.foreground:
+            self._emit_background()
         if cancelled:
             _log.info("Cancelled: %s", entry.title)
         else:

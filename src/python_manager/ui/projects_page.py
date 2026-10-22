@@ -25,7 +25,7 @@ from ..core import projects, venvs
 from ..core.projects import Check, Project
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, color_rows, fill_table, make_table, open_folder
+from .widgets import button, button_row, color_rows, fill_table, loading_overlay, make_table, open_folder
 
 STATUS_COLORS = {projects.MISSING: "#c62828", projects.MISMATCH: "#ef6c00", projects.OK: "#2e7d32"}
 UV_SYNC = "uv.lock (uv sync)"
@@ -61,6 +61,7 @@ class ProjectsPage(QWidget):
         form.addRow("Requirements:", self.source)
 
         self.table = make_table(["Requirement", "Installed", "Status"], stretch=0)
+        self.overlay = loading_overlay(self.table)
         self.summary = QLabel()
         self.create_btn = button("Create environment…", self.create_env, "Create .venv in the project and sync it")
         self.sync_btn = button("Sync", self.sync, "Install the requirements into the environment")
@@ -179,15 +180,18 @@ class ProjectsPage(QWidget):
         self._generation += 1
         generation = self._generation
         if env is None or source is None or not source.is_file():
+            self.overlay.stop()
             fill_table(self.table, [])
             self.summary.setText("Create an environment to compare it with the requirements." if project and not env
                                  else "")
             return
         self.summary.setText("Comparing…")
+        self.overlay.start(f"Comparing {env.name} with {source.name}…")
 
         def done(checks: list[Check]):
             if generation != self._generation:
                 return
+            self.overlay.stop()
             fill_table(self.table, [(c, (c.requirement, c.installed or "—", c.status)) for c in checks])
             color_rows(self.table, 2, STATUS_COLORS)
             missing = sum(c.status == projects.MISSING for c in checks)
@@ -201,6 +205,7 @@ class ProjectsPage(QWidget):
 
         def failed(message: str):
             if generation == self._generation:
+                self.overlay.stop()
                 self.summary.setText(f"Could not compare: {message.splitlines()[0]}")
 
         self.tasks.run(f"Comparing {project.name}",

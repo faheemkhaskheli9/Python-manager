@@ -9,7 +9,7 @@ VULN = Vulnerability("GHSA-1", "Jinja2", "2.10", "Sandbox escape", ("CVE-1",), "
 
 def fake(monkeypatch, outdated=None, vulns=(), fail_scan=False):
     monkeypatch.setattr(packages, "outdated", lambda py: dict(outdated or {}))
-    monkeypatch.setattr(packages, "list_packages", lambda py: [Package("Jinja2", "2.10")])
+    monkeypatch.setattr(packages, "installed", lambda py: [Package("Jinja2", "2.10")])
 
     def scan(items, ctx):
         if fail_scan:

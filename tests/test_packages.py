@@ -41,6 +41,7 @@ def test_install_list_uninstall(backend, tmp_path):
     packages.install(python, [str(wheel)], extra_args=["--no-index"])
     names = {p.name.lower(): p.version for p in packages.list_packages(python)}
     assert names.get("pm-demo") == "1.0"
+    assert {p.name.lower(): p.version for p in packages.installed(python)} == names
     assert any(line.startswith("pm-demo") for line in packages.freeze(python).splitlines())
 
     graph = deps.load_graph(python)
@@ -70,6 +71,7 @@ def test_pip_missing(tmp_path):
     assert not packages.has_pip(bare.executable)
     with pytest.raises(packages.PipMissing):
         packages.list_packages(bare.executable)
+    assert packages.installed(bare.executable) == []  # metadata needs no pip
 
 
 def test_project_info(monkeypatch):

@@ -23,7 +23,7 @@ from ..core.interpreters import MANAGED, Interpreter
 from ..core.python_versions import RemotePython
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, make_table, open_folder, selected_payload
+from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
 
 
 class PythonsPage(QWidget):
@@ -36,6 +36,7 @@ class PythonsPage(QWidget):
         # Installed interpreters
         self.installed = make_table(["Name", "Version", "Type", "Location"])
         self.installed.itemSelectionChanged.connect(self._update_buttons)
+        self.installed_overlay = loading_overlay(self.installed)
         self.uninstall_btn = button("Uninstall", self.uninstall)
         self.folder_btn = button("Open folder", self.open_selected_folder)
         installed_box = QGroupBox("Installed Pythons")
@@ -66,6 +67,7 @@ class PythonsPage(QWidget):
 
         self.available = make_table(["Version", "Variant", "Build", "Status"])
         self.available.itemSelectionChanged.connect(self._update_buttons)
+        self.available_overlay = loading_overlay(self.available)
         self.available.doubleClicked.connect(lambda _: self.install())
         self.info = QLabel()
         self.info.setWordWrap(True)
@@ -85,6 +87,9 @@ class PythonsPage(QWidget):
         root.addWidget(splitter)
 
         state.changed.connect(self._render_installed)
+        state.loading_changed.connect(
+            lambda on: self.installed_overlay.start("Looking for installed Pythons…") if on and not self.installed.rowCount()
+            else self.installed_overlay.stop())
         self._update_buttons()
 
     def showEvent(self, event) -> None:
@@ -128,13 +133,16 @@ class PythonsPage(QWidget):
         self.info.setText("Loading available versions…")
 
         def failed(message: str) -> None:
+            self.available_overlay.stop()
             self.info.setText(f"Could not load the version list: {message.splitlines()[0]}")
 
-        self.tasks.run("Fetching available Python versions",
-                       lambda ctx: python_versions.list_available(count, ctx),
-                       self._set_available, failed)
+        if self.tasks.run("Fetching available Python versions",
+                          lambda ctx: python_versions.list_available(count, ctx),
+                          self._set_available, failed):
+            self.available_overlay.start("Fetching the list of Python builds…")
 
     def _set_available(self, items: list[RemotePython]) -> None:
+        self.available_overlay.stop()
         self._available = items
         self.info.setText(f"{len(items)} builds for {python_versions.target_triple()} "
                           f"from python-build-standalone. Installs go to {paths.pythons_dir()}")

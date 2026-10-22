@@ -16,6 +16,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -125,18 +126,24 @@ def list_available(count: int = 3, ctx: TaskContext = NULL) -> list[RemotePython
     ctx.log(f"Looking up Python builds for {triple}")
     best: dict[str, RemotePython] = {}
     tags = release_tags(count)[:count]
-    for i, tag in enumerate(tags):
-        ctx.check()
+
+    def fetch(tag: str):
         try:
-            text = net.get_text(DOWNLOAD.format(tag=tag, name="SHA256SUMS"))
+            return net.get_text(DOWNLOAD.format(tag=tag, name="SHA256SUMS")), None
         except Exception as exc:
-            ctx.log(f"Skipping release {tag}: {exc}")
-            continue
-        for item in parse_sha256sums(text, tag, triple):
-            current = best.get(item.key)
-            if current is None or int(item.build) > int(current.build):
-                best[item.key] = item
-        ctx.progress(i + 1, len(tags))
+            return None, exc
+
+    with ThreadPoolExecutor(max_workers=6) as pool:  # one request per release, fetched in parallel
+        for i, (tag, (text, error)) in enumerate(zip(tags, pool.map(fetch, tags))):
+            ctx.check()
+            ctx.progress(i + 1, len(tags))
+            if error is not None:
+                ctx.log(f"Skipping release {tag}: {error}")
+                continue
+            for item in parse_sha256sums(text, tag, triple):
+                current = best.get(item.key)
+                if current is None or int(item.build) > int(current.build):
+                    best[item.key] = item
     return sorted(best.values(), key=lambda r: (version_key(r.version), not r.freethreaded), reverse=True)
 
 

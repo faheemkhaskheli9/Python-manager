@@ -8,7 +8,7 @@ from ..core import disk, python_versions, venvs
 from ..core.disk import Usage
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, make_table, open_folder, selected_payload
+from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
 
 
 class DiskPage(QWidget):
@@ -19,6 +19,7 @@ class DiskPage(QWidget):
 
         self.table = make_table(["Type", "Name", "Size", "Location"], stretch=3)
         self.table.itemSelectionChanged.connect(self._update_buttons)
+        self.overlay = loading_overlay(self.table)
         self.total = QLabel("Sizes are calculated when this page is opened.")
         self.clean_btn = button("Clean", self.clean, "Empty the selected cache")
         self.delete_btn = button("Delete", self.delete, "Delete the selected environment or Python")
@@ -38,8 +39,10 @@ class DiskPage(QWidget):
 
     def scan(self) -> None:
         self.total.setText("Calculating sizes…")
+        self.overlay.start("Calculating folder sizes…")
 
         def done(items: list[Usage]):
+            self.overlay.stop()
             fill_table(self.table, [(u, (u.kind, u.name, (disk.format_size(u.size), u.size), str(u.path)))
                                     for u in items])
             caches = sum(u.size for u in items if u.cleanable)
@@ -47,9 +50,11 @@ class DiskPage(QWidget):
                                f" · caches: {disk.format_size(caches)}")
             self._update_buttons()
 
-        self.tasks.run("Calculating disk usage", disk.scan, done,
-                       lambda msg: self.total.setText(f"Could not calculate sizes: {msg.splitlines()[0]}"),
-                       foreground=False)
+        def failed(message: str):
+            self.overlay.stop()
+            self.total.setText(f"Could not calculate sizes: {message.splitlines()[0]}")
+
+        self.tasks.run("Calculating disk usage", disk.scan, done, failed, foreground=False)
 
     def _selected(self) -> Usage:
         return selected_payload(self.table)
