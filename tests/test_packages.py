@@ -94,3 +94,30 @@ def test_project_info(monkeypatch):
 def test_install_requires_specs():
     with pytest.raises(ValueError):
         packages.install(Path(sys.executable), [" "])
+
+
+def test_upgrade_major():
+    assert packages.Upgrade("a", "1.9", "2.0").major
+    assert not packages.Upgrade("a", "1.2", "1.9").major
+    assert packages.Upgrade("a", "0.3.1", "0.4").major
+    assert not packages.Upgrade("a", "0.3.1", "0.3.2").major
+
+
+def test_upgrade_reports_changes(monkeypatch):
+    states = iter([
+        [packages.Package("A", "1.0"), packages.Package("b", "1.0")],
+        [packages.Package("A", "2.0"), packages.Package("b", "1.0"), packages.Package("new-dep", "0.5")],
+    ])
+    calls = []
+    monkeypatch.setattr(packages, "installed", lambda python: next(states))
+    monkeypatch.setattr(packages, "install", lambda python, names, ctx, upgrade: calls.append((list(names), upgrade)))
+    monkeypatch.setattr(packages, "conflicts", lambda python: ["b 1.0 requires a<2, but you have a 2.0."])
+    result = packages.upgrade(Path(sys.executable), ["A", "b"])
+    assert calls == [(["A", "b"], True)]
+    assert result.changed == [packages.Upgrade("A", "1.0", "2.0"), packages.Upgrade("new-dep", "", "0.5")]
+    assert result.conflicts == ["b 1.0 requires a<2, but you have a 2.0."]
+
+
+def test_conflicts_clean_env(tmp_path):
+    env = venvs.create("check", Path(sys.executable), tmp_path, with_pip=True)
+    assert packages.conflicts(env.executable) == []

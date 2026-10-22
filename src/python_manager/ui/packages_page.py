@@ -30,9 +30,11 @@ from ..core import deps, favorites, packages, pypi_names, security
 from ..core.interpreters import Interpreter
 from ..core.packages import Package, ProjectInfo
 from .deps_dialog import DependencyDialog
+from .export_dialog import export_environment
 from .security_dialog import SecurityDialog
 from .state import AppState
 from .tasks import TaskManager
+from .upgrade_dialog import update_all
 from .widgets import button, button_row, fill_table, loading_overlay, make_table, selected_payloads
 
 LATEST = "Latest"
@@ -94,12 +96,13 @@ class PackagesPage(QWidget):
         lay.addWidget(self.status)
         lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn, self.favorite_btn, self.deps_btn))
         lay.addLayout(button_row(button("Check for updates", self.check_updates),
-                                 button("Upgrade all", self.upgrade_all, "Upgrade every outdated package"),
+                                 button("Update all…", self.upgrade_all, "Choose which outdated packages to update"),
                                  button("Security check", self.security_check,
                                         "Look up known vulnerabilities in the OSV database")))
         lay.addLayout(button_row(button("Install from file…", self.install_from_file,
                                         "Install a wheel, source archive or requirements.txt"),
-                                 button("Export requirements…", self.export_requirements)))
+                                 button("Export…", self.export_requirements,
+                                        "Save as requirements.txt, pylock.toml or pyproject.toml")))
 
         # Install / download panel
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
@@ -346,12 +349,8 @@ class PackagesPage(QWidget):
 
     def upgrade_all(self) -> None:
         interp = self.python
-        if interp is None:
-            return
-        if QMessageBox.question(self, "Upgrade all",
-                                f"Upgrade every outdated package in {interp.name}?") != QMessageBox.StandardButton.Yes:
-            return
-        self._run("Upgrading all packages", packages.upgrade_all)
+        if interp is not None:
+            update_all(self, self.state, self.tasks, interp.executable, interp.name, self.reload, self.overlay)
 
     def check_updates(self) -> None:
         interp = self.python
@@ -414,16 +413,8 @@ class PackagesPage(QWidget):
 
     def export_requirements(self) -> None:
         interp = self.python
-        if interp is None:
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "Export requirements", "requirements.txt", "Text files (*.txt)")
-        if not path:
-            return
-
-        def save(_ctx):
-            Path(path).write_text(packages.freeze(interp.executable), encoding="utf-8")
-
-        self.tasks.run("Exporting requirements", save)
+        if interp is not None:
+            export_environment(self, self.tasks, interp.executable, interp.name, interp.version)
 
     # Install / download ----------------------------------------------------
 
