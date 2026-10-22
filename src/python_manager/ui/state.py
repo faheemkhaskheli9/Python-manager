@@ -12,6 +12,7 @@ from .tasks import TaskManager
 class AppState(QObject):
     changed = Signal()
     health_changed = Signal()
+    loading_changed = Signal(bool)
 
     def __init__(self, tasks: TaskManager):
         super().__init__(tasks)
@@ -21,9 +22,15 @@ class AppState(QObject):
         self.envs: list[venvs.VirtualEnv] = []
         self.loading = False
         self.health: dict[str, health.Report] = health.load()  # keyed by interpreter path
+        self.health_checking = False
 
     def set_health(self, reports: dict[str, health.Report]) -> None:
         self.health = reports
+        self.health_checking = False
+        self.health_changed.emit()
+
+    def set_health_checking(self, checking: bool) -> None:
+        self.health_checking = checking
         self.health_changed.emit()
 
     def refresh(self, include_system: bool = False) -> None:
@@ -37,12 +44,15 @@ class AppState(QObject):
         def done(result):
             self.managed, self.system, self.envs = result
             self.loading = False
+            self.loading_changed.emit(False)
             self.changed.emit()
 
         def failed(_msg):
             self.loading = False
+            self.loading_changed.emit(False)
 
         self.loading = True
+        self.loading_changed.emit(True)
         self._tasks.run("Scanning interpreters", load, done, failed, foreground=False)
 
     def interpreters(self, include_envs: bool = True) -> list[Interpreter]:

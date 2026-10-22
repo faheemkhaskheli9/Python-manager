@@ -79,6 +79,21 @@ def list_packages(python: Path) -> list[Package]:
     return sorted((Package(i["name"], i["version"]) for i in items), key=lambda p: p.name.lower())
 
 
+def from_dists(dists: Iterable) -> list[Package]:
+    """Packages from installed metadata (objects with ``name`` and ``version``), sorted by name."""
+    return sorted((Package(d.name, d.version) for d in dists), key=lambda p: p.name.lower())
+
+
+def installed(python: Path) -> list[Package]:
+    """Installed packages read from metadata: much faster than ``pip list`` and works without pip."""
+    from .deps import load_graph
+
+    try:
+        return from_dists(load_graph(python).values())
+    except Exception:  # e.g. Python < 3.8 has no importlib.metadata
+        return list_packages(python)
+
+
 def outdated(python: Path) -> dict[str, str]:
     """Map of package name -> newest version available, for packages with updates."""
     return {i["name"]: i["latest_version"] for i in _pip_json(python, "list", "--outdated")}

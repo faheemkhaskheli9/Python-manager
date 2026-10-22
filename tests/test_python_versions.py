@@ -69,6 +69,24 @@ def test_list_available_keeps_newest_build(monkeypatch):
     assert [(i.version, i.build) for i in items] == [("3.12.7", "20241016"), ("3.11.9", "20241008")]
 
 
+def test_list_available_skips_failed_release(monkeypatch):
+    triple = "x86_64-unknown-linux-gnu"
+    good = f"a  cpython-3.12.7+20241016-{triple}-install_only.tar.gz\n"
+
+    def get_text(url):
+        if "20241008" in url:
+            raise OSError("timed out")
+        return good
+
+    logs = []
+    monkeypatch.setattr(python_versions, "target_triple", lambda: triple)
+    monkeypatch.setattr(python_versions, "release_tags", lambda count: ["20241016", "20241008"])
+    monkeypatch.setattr(python_versions.net, "get_text", get_text)
+    ctx = python_versions.TaskContext(log=logs.append)
+    assert [i.build for i in python_versions.list_available(2, ctx)] == ["20241016"]
+    assert any("Skipping release 20241008" in line for line in logs)
+
+
 def test_version_key_orders_prereleases():
     versions = ["3.12.0", "3.12.0rc1", "3.9.18", "3.12.0a7", "3.13.1"]
     assert sorted(versions, key=version_key) == ["3.9.18", "3.12.0a7", "3.12.0rc1", "3.12.0", "3.13.1"]

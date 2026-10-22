@@ -22,15 +22,23 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _lock = threading.Lock()
+_cache: dict[str, Any] = {"key": None, "data": {}}  # parsed file, reused while it is unchanged
 
 
 def load() -> dict[str, Any]:
-    data = dict(DEFAULTS)
+    target = paths.config_file()
     try:
-        data.update(json.loads(paths.config_file().read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        pass
-    return data
+        stat = target.stat()
+        key = (str(target), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return dict(DEFAULTS)
+    if _cache["key"] != key:
+        try:
+            stored = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            stored = {}
+        _cache.update(key=key, data=stored)
+    return {**DEFAULTS, **_cache["data"]}
 
 
 def save(data: dict[str, Any]) -> None:
@@ -39,6 +47,7 @@ def save(data: dict[str, Any]) -> None:
         tmp = target.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         tmp.replace(target)
+        _cache["key"] = None
 
 
 def get(key: str) -> Any:

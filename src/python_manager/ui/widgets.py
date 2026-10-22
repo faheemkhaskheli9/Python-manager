@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional, Sequence
 
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFontDatabase
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, QUrl
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFontDatabase, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -53,6 +53,7 @@ def fill_table(table: QTableWidget, rows: Iterable[tuple[Any, Sequence[Any]]]) -
 
     A cell is its text, or a (text, sort key) pair.
     """
+    table.setUpdatesEnabled(False)  # one repaint at the end instead of one per cell
     table.setSortingEnabled(False)
     table.setRowCount(0)
     for payload, cells in rows:
@@ -70,6 +71,7 @@ def fill_table(table: QTableWidget, rows: Iterable[tuple[Any, Sequence[Any]]]) -
                 item.setData(Qt.ItemDataRole.UserRole, payload)
             table.setItem(row, col, item)
     table.setSortingEnabled(True)
+    table.setUpdatesEnabled(True)
 
 
 def color_rows(table: QTableWidget, column: int, colors: dict[str, str]) -> None:
@@ -124,3 +126,65 @@ class LogView(QPlainTextEdit):
     def append_line(self, text: str) -> None:
         self.appendPlainText(text)
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+
+class LoadingOverlay(QWidget):
+    """A spinner and a message drawn over a widget (e.g. a table's viewport) while its data loads."""
+
+    def __init__(self, target: QWidget):
+        super().__init__(target)
+        self._text = ""
+        self._angle = 0
+        self._timer = QTimer(self, interval=60)
+        self._timer.timeout.connect(self._spin)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        target.installEventFilter(self)
+        self.hide()
+
+    @property
+    def active(self) -> bool:
+        return self._timer.isActive()
+
+    def start(self, text: str = "Loading…") -> None:
+        self._text = text
+        self.setGeometry(self.parentWidget().rect())
+        self.raise_()
+        self.show()
+        self._timer.start()
+        self.update()
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self.hide()
+
+    def _spin(self) -> None:
+        self._angle = (self._angle + 30) % 360
+        self.update()
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            self.setGeometry(obj.rect())
+        return False
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        veil = self.palette().color(QPalette.ColorRole.Base)
+        veil.setAlpha(190)
+        painter.fillRect(self.rect(), veil)
+        size = 28
+        box = QRectF(self.width() / 2 - size / 2, self.height() / 2 - size, size, size)
+        track = self.palette().color(QPalette.ColorRole.Mid)
+        painter.setPen(QPen(track, 3))
+        painter.drawEllipse(box)
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight), 3,
+                            Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawArc(box, -self._angle * 16, 100 * 16)
+        painter.setPen(self.palette().color(QPalette.ColorRole.Text))
+        text_box = QRectF(0, box.bottom() + 8, self.width(), 24)
+        painter.drawText(text_box, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._text)
+
+
+def loading_overlay(table: QTableWidget) -> LoadingOverlay:
+    """An overlay over the rows of ``table`` that keeps the header visible."""
+    return LoadingOverlay(table.viewport())

@@ -73,7 +73,15 @@ class MainWindow(QMainWindow):
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.tasks.cancel)
         self.cancel_btn.hide()
+        # Background work (listing packages, scheduled checks…) gets a small indicator of its own.
+        self.bg_label = QLabel()
+        self.bg_progress = QProgressBar(maximumWidth=80, maximumHeight=10, textVisible=False)
+        self.bg_progress.setRange(0, 0)
+        self.bg_label.hide()
+        self.bg_progress.hide()
         self.statusBar().addWidget(self.status_label, 1)
+        self.statusBar().addPermanentWidget(self.bg_label)
+        self.statusBar().addPermanentWidget(self.bg_progress)
         self.statusBar().addPermanentWidget(self.progress)
         self.statusBar().addPermanentWidget(self.cancel_btn)
 
@@ -81,6 +89,7 @@ class MainWindow(QMainWindow):
         self.tasks.started.connect(self._task_started)
         self.tasks.progress.connect(self._task_progress)
         self.tasks.finished.connect(self._task_finished)
+        self.tasks.background.connect(self._background_changed)
 
         self.tray: QSystemTrayIcon | None = None
         self._checking = False
@@ -163,7 +172,7 @@ class MainWindow(QMainWindow):
 
         def done(reports):
             self._checking = False
-            self.state.set_health(reports)
+            self.state.set_health(reports)  # also clears "checking…"
             message = health.summarize(reports[str(t)] for t in targets if str(t) in reports)
             self.status_label.setText(message or f"Checked {len(targets)} environments: all up to date")
             if message:
@@ -171,12 +180,15 @@ class MainWindow(QMainWindow):
 
         def failed(message):
             self._checking = False
+            self.state.set_health_checking(False)
             self.status_label.setText(f"Environment check failed: {message.splitlines()[0]}")
 
         self._checking = True
         started = self.tasks.run(f"Checking {len(targets)} environments",
                                  lambda ctx: health.check_all(targets, ctx), done, failed, foreground=manual)
-        if not started:
+        if started:
+            self.state.set_health_checking(True)
+        else:
             self._checking = False
 
     def _notify(self, title: str, message: str) -> None:
@@ -206,6 +218,14 @@ class MainWindow(QMainWindow):
     def show_packages_for(self, executable) -> None:
         self.packages.select(executable)
         self.nav.setCurrentRow(1)
+
+    def _background_changed(self, titles: list) -> None:
+        if titles:
+            more = f" (+{len(titles) - 1})" if len(titles) > 1 else ""
+            self.bg_label.setText(f"{titles[-1]}…{more}")
+            self.bg_label.setToolTip("\n".join(titles))
+        self.bg_label.setVisible(bool(titles))
+        self.bg_progress.setVisible(bool(titles))
 
     def _task_started(self, title: str) -> None:
         self.status_label.setText(title + "…")

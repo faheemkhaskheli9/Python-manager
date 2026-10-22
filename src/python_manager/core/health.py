@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -11,7 +12,7 @@ from typing import Iterable
 from . import config, packages, paths, security
 from .deps import normalize
 from .security import Vulnerability
-from .tasks import NULL, TaskContext
+from .tasks import NULL, Cancelled, TaskContext
 
 WARN = "⚠"
 
@@ -87,7 +88,7 @@ def check(python: Path, ctx: TaskContext = NULL, scan_security: bool = True) -> 
     security_error = ""
     if scan_security:
         try:
-            vulns = security.scan(packages.list_packages(python), ctx)
+            vulns = security.scan(packages.installed(python), ctx)
         except Exception as exc:  # e.g. offline: keep the update results
             security_error = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
             ctx.log(f"Security check failed: {security_error}")
@@ -98,14 +99,22 @@ def check_all(executables: Iterable[Path], ctx: TaskContext = NULL, scan_securit
     """Check every interpreter, save the reports and return all of them (old ones included)."""
     executables = list(executables)
     reports = load()
-    for done, python in enumerate(executables):
+
+    def one(python: Path) -> Report:
         ctx.check()
-        ctx.progress(done, len(executables))
         ctx.log(f"Checking {python}")
         try:
-            reports[str(python)] = check(python, ctx, scan_security)
+            return check(python, ctx, scan_security)
+        except Cancelled:
+            raise
         except Exception as exc:  # one broken environment must not stop the rest
-            reports[str(python)] = Report(str(python), time.time(), error=str(exc).splitlines()[0])
+            return Report(str(python), time.time(), error=str(exc).splitlines()[0])
+
+    # Each check mostly waits on a subprocess or the network, so a few run side by side.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for done, (python, report) in enumerate(zip(executables, pool.map(one, executables)), 1):
+            reports[str(python)] = report
+            ctx.progress(done, len(executables))
     known = {str(p) for p in executables}
     reports = {k: r for k, r in reports.items() if k in known or Path(k).exists()}
     save(reports)

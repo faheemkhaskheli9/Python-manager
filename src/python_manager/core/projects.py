@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -139,8 +140,11 @@ def compare(requirements: list[str], python: Path) -> list[Check]:
     """Each requirement that applies to ``python`` and whether the installed version satisfies it."""
     from packaging.requirements import InvalidRequirement, Requirement
 
-    graph = deps.load_graph(python)
-    env = {**marker_environment(python), "extra": ""}
+    with ThreadPoolExecutor(max_workers=2) as pool:  # two subprocesses, started together
+        graph_job = pool.submit(deps.load_graph, python)
+        markers = marker_environment(python)
+        graph = graph_job.result()
+    env = {**markers, "extra": ""}
     result = []
     for text in requirements:
         try:

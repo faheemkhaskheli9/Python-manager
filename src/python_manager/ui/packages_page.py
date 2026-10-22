@@ -28,12 +28,12 @@ from PySide6.QtWidgets import (
 
 from ..core import deps, favorites, packages, pypi_names, security
 from ..core.interpreters import Interpreter
-from ..core.packages import Package, PipMissing, ProjectInfo
+from ..core.packages import Package, ProjectInfo
 from .deps_dialog import DependencyDialog
 from .security_dialog import SecurityDialog
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, make_table, selected_payloads
+from .widgets import button, button_row, fill_table, loading_overlay, make_table, selected_payloads
 
 LATEST = "Latest"
 STAR = "★"
@@ -72,14 +72,15 @@ class PackagesPage(QWidget):
 
         # Installed packages
         self.filter = QLineEdit(placeholderText="Filter installed packages")
-        self.filter.textChanged.connect(self._render)
+        self.filter.textChanged.connect(self._apply_filter)
         self.favorites_only = QCheckBox("Favourites only")
-        self.favorites_only.toggled.connect(self._render)
+        self.favorites_only.toggled.connect(self._apply_filter)
         filter_row = QHBoxLayout()
         filter_row.addWidget(self.filter, 1)
         filter_row.addWidget(self.favorites_only)
         self.table = make_table([STAR, "Package", "Version", "Latest", "Security", "Required by"], stretch=5, multi=True)
         self.table.itemSelectionChanged.connect(self._update_buttons)
+        self.overlay = loading_overlay(self.table)
         self.status = QLabel()
         self.uninstall_btn = button("Uninstall", self.uninstall)
         self.upgrade_btn = button("Upgrade", self.upgrade)
@@ -175,7 +176,9 @@ class PackagesPage(QWidget):
         """Fill the name completer from the cached PyPI list, downloading it when missing or old."""
         def done(names):
             self.names_model.setStringList(names)
+            self.name.setPlaceholderText("Package name, e.g. requests")
 
+        self.name.setPlaceholderText("Package name (loading suggestions…)")
         self.tasks.run("Loading PyPI package names", pypi_names.load, done, lambda _: None, foreground=False)
 
     # Target selection ------------------------------------------------------
@@ -215,25 +218,31 @@ class PackagesPage(QWidget):
         self.pip_bar.hide()
         self._render()
         if interp is None:
+            self.overlay.stop()
             self.status.setText("No interpreter selected.")
             return
         self._generation += 1
         generation = self._generation
         self.status.setText("Loading packages…")
+        self.overlay.start(f"Loading packages of {interp.name}…")
 
         def done(result):
-            if generation == self._generation:
-                self._packages, self._graph = result
-                self._required_by = deps.required_by(self._graph)
-                report = self.state.health.get(str(interp.executable))
-                if report:  # results of the last scheduled check that still apply
-                    report = report.current(self._packages)
-                    self._latest, self._vulns = dict(report.outdated), list(report.vulns)
-                self._render()
+            if generation != self._generation:
+                return
+            self.overlay.stop()
+            self._packages, self._graph, has_pip = result
+            self._required_by = deps.required_by(self._graph)
+            report = self.state.health.get(str(interp.executable))
+            if report:  # results of the last scheduled check that still apply
+                report = report.current(self._packages)
+                self._latest, self._vulns = dict(report.outdated), list(report.vulns)
+            self.pip_bar.setVisible(not has_pip)
+            self._render()
 
         def failed(message):
             if generation != self._generation:
                 return
+            self.overlay.stop()
             if "pip is not installed" in message:
                 self.pip_bar.show()
                 self.status.setText("pip is not installed.")
@@ -241,19 +250,19 @@ class PackagesPage(QWidget):
                 self.status.setText(f"Could not list packages: {message.splitlines()[0]}")
 
         def load(_ctx):
-            items = packages.list_packages(interp.executable)
+            # Installed metadata gives names, versions and dependencies in one quick call;
+            # pip list is only the fallback (e.g. Python < 3.8).
             try:
                 graph = deps.load_graph(interp.executable)
-            except Exception:  # dependency info is optional (e.g. Python < 3.8)
-                graph = {}
-            return items, graph
+            except Exception:
+                return packages.list_packages(interp.executable), {}, True
+            has_pip = packages.uv_path() is not None or "pip" in graph
+            return packages.from_dists(graph.values()), graph, has_pip
 
         self.tasks.run("Listing packages", load, done, failed, foreground=False)
 
     def _render(self) -> None:
-        text = self.filter.text().strip().lower()
         favs = {favorites.normalize(f) for f in favorites.list_favorites()}
-        only_favs = self.favorites_only.isChecked()
         vulns: dict[tuple[str, str], int] = {}
         for v in self._vulns:
             key = (deps.normalize(v.package), v.version)
@@ -261,16 +270,28 @@ class PackagesPage(QWidget):
         rows = []
         for p in self._packages:
             fav = favorites.normalize(p.name) in favs
-            if text in p.name.lower() and (fav or not only_favs):
-                users = ", ".join(self._required_by.get(deps.normalize(p.name), []))
-                count = vulns.get((deps.normalize(p.name), p.version), 0)
-                alert = f"{WARN} {count}" if count else ""
-                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), alert, users)))
+            users = ", ".join(self._required_by.get(deps.normalize(p.name), []))
+            count = vulns.get((deps.normalize(p.name), p.version), 0)
+            alert = f"{WARN} {count}" if count else ""
+            rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), alert, users)))
         fill_table(self.table, rows)
         self._render_favorites()
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Hide rows that do not match instead of rebuilding the table on every keystroke."""
+        text = self.filter.text().strip().lower()
+        only_favs = self.favorites_only.isChecked()
+        shown = 0
+        for row in range(self.table.rowCount()):
+            visible = text in self.table.item(row, 1).text().lower() and \
+                (not only_favs or self.table.item(row, 0).text() == STAR)
+            self.table.setRowHidden(row, not visible)
+            shown += visible
         if self._packages:
             updates = f", {len(self._latest)} with updates" if self._latest else ""
-            self.status.setText(f"{len(self._packages)} packages{updates} · using {packages.backend()}")
+            listed = f"{shown} of {len(self._packages)}" if shown != len(self._packages) else f"{shown}"
+            self.status.setText(f"{listed} packages{updates} · using {packages.backend()}")
         self._update_buttons()
 
     def _selected_names(self) -> list[str]:
@@ -338,10 +359,13 @@ class PackagesPage(QWidget):
             return
 
         def done(latest):
+            self.overlay.stop()
             self._latest = latest
             self._render()
 
-        self.tasks.run(f"Checking for updates ({interp.name})", lambda _: packages.outdated(interp.executable), done)
+        if self.tasks.run(f"Checking for updates ({interp.name})", lambda _: packages.outdated(interp.executable),
+                          done, self._failed("Check for updates")):
+            self.overlay.start("Checking PyPI for newer versions…")
 
     def security_check(self) -> None:
         interp, items = self.python, list(self._packages)
@@ -349,6 +373,7 @@ class PackagesPage(QWidget):
             return
 
         def done(vulns):
+            self.overlay.stop()
             self._vulns = vulns
             self._render()
             if not vulns:
@@ -360,7 +385,17 @@ class PackagesPage(QWidget):
                 specs = dialog.specs
                 self._run("Upgrading vulnerable packages", lambda py, ctx: packages.install(py, specs, ctx))
 
-        self.tasks.run(f"Security check ({interp.name})", lambda ctx: security.scan(items, ctx), done)
+        if self.tasks.run(f"Security check ({interp.name})", lambda ctx: security.scan(items, ctx), done,
+                          self._failed("Security check")):
+            self.overlay.start("Looking up known vulnerabilities…")
+
+    def _failed(self, title: str):
+        """Error handler for a task shown with the overlay: hide it and report the error."""
+        def failed(message: str) -> None:
+            self.overlay.stop()
+            if message != "Cancelled":
+                QMessageBox.warning(self, title, message.splitlines()[0] if message else title)
+        return failed
 
     def ensure_pip(self) -> None:
         self._run("Installing pip", packages.ensure_pip)
