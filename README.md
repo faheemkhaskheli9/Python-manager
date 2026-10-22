@@ -73,10 +73,17 @@ Ready-to-run builds for Windows, macOS (Apple silicon and Intel) and Linux are a
 [GitHub release](https://github.com/faheemkhaskheli9/python-manager/releases). Unzip and run
 *Python Manager*; no Python installation is needed.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). Every pull request adds its entries under **Unreleased**, each
+ending with the PR number, e.g. `([#12])`; CI fails otherwise (label `skip-changelog` for
+changes users never notice).
+
 ## Release
 
-Push a version tag; the `release` workflow builds every platform with PyInstaller and publishes
-a release with the archives:
+Rename **Unreleased** in `CHANGELOG.md` to the new version (e.g. `## [0.2.0] - 2026-11-01`),
+bump `version` in `pyproject.toml` and `src/python_manager/__init__.py`, then push a version tag; the `release` workflow builds every platform with PyInstaller and publishes
+a release with the archives, using that changelog section as release notes:
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0
