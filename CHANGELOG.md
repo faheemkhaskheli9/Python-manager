@@ -19,12 +19,18 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 - Export a virtual environment as `requirements.txt` (pinned versions) or `pyproject.toml`
   (top-level packages). ([#1])
 - Create a virtual environment from a `requirements.txt` or `pyproject.toml`. ([#1])
+- Package name autocomplete from the full PyPI package list, cached locally and refreshed
+  weekly. ([#1])
+- Security check: looks up the installed packages in the OSV database, marks affected packages
+  in a *Security* column, lists each vulnerability with severity, fixed version and a link to
+  osv.dev, and upgrades to fixed versions in one click. ([#1])
 - This changelog, a pull request template and a CI check that every pull request updates it. ([#1])
 
 ### Changed
 - Creating an environment with packages removes the half-created environment if installing the
   packages fails. ([#1])
 - The About dialog shows the log file location. ([#1])
+- `packaging` is now a dependency, for comparing versions. ([#1])
 
 ## [0.1.0] - 2026-10-22
 

@@ -7,6 +7,9 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
   check for updates, upgrade all outdated packages at once and export `requirements.txt`.
+  Package names autocomplete from the full PyPI list.
+- **Security check** – look up known vulnerabilities in the installed packages in the
+  [OSV database](https://osv.dev), see severity and fixed versions, and upgrade to fixed versions.
 - **Dependencies** – see what each package requires and what requires it (tree view and a
   "Required by" column). Uninstalling warns about packages that still depend on the selection and
   offers to remove dependencies that are no longer needed.
@@ -38,6 +41,8 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 |---|---|
 | Python downloads | Relocatable CPython builds from [python-build-standalone](https://github.com/astral-sh/python-build-standalone), verified with SHA-256 and extracted into the app data folder. Uninstall removes that folder. No admin rights needed. |
 | Packages | `uv pip … --python <interpreter>` when uv is available, otherwise the interpreter's own `pip`; version details come from the PyPI JSON API. Downloads always use pip. |
+| Name autocomplete | PyPI's JSON simple index (`https://pypi.org/simple/`), cached in the app data folder and refreshed weekly. |
+| Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |
 | Virtual environments | `uv venv` when uv is available, otherwise standard library `venv`. |
 
@@ -56,7 +61,7 @@ when listing many releases.
 
 ```
 src/python_manager/
-  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projectfile, logs
+  core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projectfile, security, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```

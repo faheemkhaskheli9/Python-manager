@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
@@ -27,20 +28,33 @@ def _ssl_context() -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
-def open_url(url: str, headers: Optional[dict] = None, timeout: float = 30):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+def open_url(url: str, headers: Optional[dict] = None, timeout: float = 30, data: Optional[bytes] = None):
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **(headers or {})})
     if url.startswith("https:"):
         return urllib.request.urlopen(req, timeout=timeout, context=_ssl_context())
     return urllib.request.urlopen(req, timeout=timeout)
 
 
+def _read(resp) -> str:
+    body = resp.read()
+    if resp.headers.get("Content-Encoding") == "gzip":
+        body = gzip.decompress(body)
+    return body.decode("utf-8")
+
+
 def get_text(url: str, headers: Optional[dict] = None, timeout: float = 30) -> str:
-    with open_url(url, headers, timeout) as resp:
-        return resp.read().decode("utf-8")
+    with open_url(url, {"Accept-Encoding": "gzip", **(headers or {})}, timeout) as resp:
+        return _read(resp)
 
 
 def get_json(url: str, headers: Optional[dict] = None, timeout: float = 30) -> Any:
     return json.loads(get_text(url, headers, timeout))
+
+
+def post_json(url: str, payload: Any, timeout: float = 60) -> Any:
+    headers = {"Content-Type": "application/json", "Accept-Encoding": "gzip"}
+    with open_url(url, headers, timeout, json.dumps(payload).encode("utf-8")) as resp:
+        return json.loads(_read(resp))
 
 
 def download(url: str, dest: Path, ctx: TaskContext = NULL, sha256: Optional[str] = None) -> Path:
