@@ -23,8 +23,10 @@ from PySide6.QtWidgets import (
 
 from ..core import favorites, packages, paths, venvs
 from ..core.venvs import VirtualEnv
+from .export_dialog import export_environment
 from .state import AppState
 from .tasks import TaskManager
+from .upgrade_dialog import update_all
 from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
 
 
@@ -134,7 +136,8 @@ class VenvsPage(QWidget):
         self.selection_buttons = [
             button("Manage packages", self._manage),
             button("Clone…", self.clone, "New environment with the same packages"),
-            button("Export…", self._export, "Save the packages as requirements.txt or pyproject.toml"),
+            button("Update all…", self._update_all, "Choose which outdated packages to update"),
+            button("Export…", self._export, "Save as requirements.txt, pylock.toml or pyproject.toml"),
             button("Open terminal", self._terminal, "Open a terminal with the environment activated"),
             button("Open folder", lambda: self._with_selected(lambda e: open_folder(e.path))),
             self.unregister_btn,
@@ -222,16 +225,13 @@ class VenvsPage(QWidget):
 
     def _export(self) -> None:
         env = self._selected()
-        if not env:
-            return
-        path, chosen = QFileDialog.getSaveFileName(
-            self, f"Export {env.name}", "requirements.txt",
-            "requirements.txt (pinned versions) (*.txt);;pyproject.toml (top-level packages) (*.toml)")
-        if not path:
-            return
-        if "toml" in chosen and not path.endswith(".toml"):
-            path = str(Path(path).with_name("pyproject.toml"))
-        self.tasks.run(f"Exporting {env.name}", lambda _: venvs.export(env, Path(path)))
+        if env:
+            export_environment(self, self.tasks, env.executable, env.name, env.version)
+
+    def _update_all(self) -> None:
+        env = self._selected()
+        if env:
+            update_all(self, self.state, self.tasks, env.executable, env.name, lambda: None, self.overlay)
 
     def _add_existing(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select a virtual environment folder")

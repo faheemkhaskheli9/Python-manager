@@ -23,8 +23,10 @@ from PySide6.QtWidgets import (
 
 from ..core import projects, venvs
 from ..core.projects import Check, Project
+from .export_dialog import export_environment
 from .state import AppState
 from .tasks import TaskManager
+from .upgrade_dialog import update_all
 from .widgets import button, button_row, color_rows, fill_table, loading_overlay, make_table, open_folder
 
 STATUS_COLORS = {projects.MISSING: "#c62828", projects.MISMATCH: "#ef6c00", projects.OK: "#2e7d32"}
@@ -68,6 +70,8 @@ class ProjectsPage(QWidget):
         self.env_buttons = [
             self.sync_btn,
             button("Check", self.check, "Compare the environment with the requirements again"),
+            button("Update all…", self._update_all, "Choose which outdated packages to update"),
+            button("Export…", self._export, "Freeze the environment to requirements.txt or pylock.toml"),
             button("Manage packages", self._manage),
             button("Open terminal", self._terminal),
         ]
@@ -242,6 +246,22 @@ class ProjectsPage(QWidget):
         source = self._source()
         self.tasks.run(f"Syncing {project.name}", lambda ctx: projects.sync(project, source, ctx),
                        lambda _: self.check())
+
+    def _update_all(self) -> None:
+        project = self.project()
+        env = project.env() if project else None
+        if not env:
+            return
+        source = self._compare_source(project)
+        requirements = (lambda: projects.read_requirements(source)) if source and source.is_file() else None
+        update_all(self, self.state, self.tasks, env.executable, project.name, self.check, self.overlay,
+                   requirements)
+
+    def _export(self) -> None:
+        project = self.project()
+        env = project.env() if project else None
+        if env:
+            export_environment(self, self.tasks, env.executable, project.name, env.version, project.path)
 
     def _manage(self) -> None:
         project = self.project()

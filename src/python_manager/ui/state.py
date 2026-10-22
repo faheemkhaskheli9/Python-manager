@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, Signal
 
-from ..core import health, python_versions, venvs
+from ..core import health, packages, python_versions, venvs
 from ..core.interpreters import Interpreter, find_system_pythons
 from .tasks import TaskManager
 
@@ -28,6 +30,14 @@ class AppState(QObject):
         self.health = reports
         self.health_checking = False
         self.health_changed.emit()
+
+    def packages_changed(self, executable: Path, installed: list[packages.Package]) -> None:
+        """Drop findings of the last check that no longer apply after packages were changed."""
+        report = self.health.get(str(executable))
+        if report:
+            self.health = {**self.health, str(executable): report.current(installed)}
+            health.save(self.health)
+            self.health_changed.emit()
 
     def set_health_checking(self, checking: bool) -> None:
         self.health_checking = checking

@@ -18,8 +18,8 @@ def _requirement_name(line: str) -> str:
     return deps.normalize(match.group(1)) if match else ""
 
 
-def clone_requirements(python: Path) -> str:
-    """``freeze`` output for ``python`` without the packaging tools."""
+def clone_requirements(python: Path, skip: frozenset[str] | set[str] = SKIP) -> str:
+    """``freeze`` output for ``python`` without the packages in ``skip`` (the packaging tools)."""
     try:
         frozen = packages.freeze(python)
     except CommandError as exc:
@@ -27,15 +27,19 @@ def clone_requirements(python: Path) -> str:
             raise
         # No pip in the environment: installed metadata still gives exact versions.
         frozen = "\n".join(f"{d.name}=={d.version}" for d in deps.load_graph(python).values())
-    lines = [l for l in frozen.splitlines() if _requirement_name(l) not in SKIP]
+    lines = [l for l in frozen.splitlines() if _requirement_name(l) not in skip]
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def pyproject_for(python: Path, name: str, python_version: str) -> str:
-    """A minimal pyproject.toml listing the top-level packages (those nothing else requires)."""
-    graph = deps.load_graph(python)
+def top_level(graph: deps.Graph, skip: frozenset[str] | set[str] = SKIP) -> list[deps.Dist]:
+    """Installed packages nothing else requires (what was asked for), sorted by name."""
     used = deps.required_by(graph)
-    top = sorted((d for k, d in graph.items() if k not in used and k not in SKIP), key=lambda d: d.name.lower())
+    return sorted((d for k, d in graph.items() if k not in used and k not in skip), key=lambda d: d.name.lower())
+
+
+def pyproject_for(python: Path, name: str, python_version: str, skip: frozenset[str] | set[str] = SKIP) -> str:
+    """A minimal pyproject.toml listing the top-level packages (those nothing else requires)."""
+    top = top_level(deps.load_graph(python), skip)
     major_minor = ".".join(python_version.split(".")[:2])
     lines = [
         "[project]",

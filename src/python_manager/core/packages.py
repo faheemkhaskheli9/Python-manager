@@ -28,6 +28,35 @@ class Package:
 
 
 @dataclass(frozen=True)
+class Upgrade:
+    name: str
+    current: str  # empty for a package the upgrade newly installed
+    latest: str
+
+    @property
+    def major(self) -> bool:
+        """The release number that signals breaking changes moves: the first one, or the second for 0.x."""
+        try:
+            from packaging.version import Version
+
+            old, new = Version(self.current).release, Version(self.latest).release
+        except Exception:
+            old, new = tuple(self.current.split(".")), tuple(self.latest.split("."))
+        if not old or not new:
+            return False
+        if old[0] != new[0]:
+            return True
+        return str(old[0]) == "0" and old[1:2] != new[1:2]
+
+
+@dataclass(frozen=True)
+class UpgradeResult:
+    changed: list[Upgrade]  # what the resolver actually changed, new dependencies included
+    conflicts: list[str]  # broken requirements reported by ``pip check`` afterwards
+    installed: list[Package]
+
+
+@dataclass(frozen=True)
 class ProjectInfo:
     name: str
     summary: str
@@ -94,9 +123,16 @@ def installed(python: Path) -> list[Package]:
         return list_packages(python)
 
 
+def upgrades(python: Path) -> list[Upgrade]:
+    """Packages with a newer version on the index, sorted by name."""
+    items = _pip_json(python, "list", "--outdated")
+    return sorted((Upgrade(i["name"], i["version"], i["latest_version"]) for i in items),
+                  key=lambda u: u.name.lower())
+
+
 def outdated(python: Path) -> dict[str, str]:
     """Map of package name -> newest version available, for packages with updates."""
-    return {i["name"]: i["latest_version"] for i in _pip_json(python, "list", "--outdated")}
+    return {u.name: u.latest for u in upgrades(python)}
 
 
 def has_pip(python: Path) -> bool:
@@ -122,6 +158,35 @@ def install(
         raise ValueError("Nothing to install")
     args = ["--upgrade"] if upgrade else []
     run(_cmd(python, "install", *args, *extra_args, *specs), ctx)
+
+
+def conflicts(python: Path) -> list[str]:
+    """Broken requirements among the installed packages (``pip check``); empty when consistent."""
+    cmd = _cmd(python, "check")
+    proc = capture(cmd, timeout=120)
+    if proc.returncode == 0:
+        return []
+    lines = (proc.stdout + "\n" + proc.stderr).splitlines()
+    return [l.strip() for l in lines if l.strip() and "No broken requirements" not in l]
+
+
+def upgrade(python: Path, names: Iterable[str], ctx: TaskContext = NULL) -> UpgradeResult:
+    """Upgrade ``names`` and report what changed; the resolver may hold some back or add new ones."""
+    from .deps import normalize
+
+    before = {normalize(p.name): p.version for p in installed(python)}
+    install(python, names, ctx, upgrade=True)
+    after = installed(python)
+    changed = [Upgrade(p.name, before.get(normalize(p.name), ""), p.version)
+               for p in after if before.get(normalize(p.name)) != p.version]
+    try:
+        broken = conflicts(python)
+    except Exception as exc:  # e.g. no pip: the upgrade itself still succeeded
+        ctx.log(f"Could not check for conflicts: {exc}")
+        broken = []
+    for line in broken:
+        ctx.log(f"Conflict: {line}")
+    return UpgradeResult(changed, broken, after)
 
 
 def upgrade_all(python: Path, ctx: TaskContext = NULL) -> list[str]:

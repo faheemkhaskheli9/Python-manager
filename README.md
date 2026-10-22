@@ -6,8 +6,14 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   (including pre-releases and free-threaded builds). Existing system Pythons are detected too.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
-  check for updates, upgrade all outdated packages at once and export `requirements.txt`.
-  Package names autocomplete from the full PyPI list.
+  check for updates and export the environment. Package names autocomplete from the full PyPI list.
+- **Update all** – one click lists every outdated package with its installed and new version,
+  flags major versions and, on the Projects page, updates the project's requirements exclude.
+  Untick what to keep, update the rest, and see what changed plus any broken requirements.
+- **Export / lock** – save any environment as `requirements.txt` (all packages or top-level only,
+  pinned), `requirements.txt` with hashes, a [PEP 751](https://peps.python.org/pep-0751/)
+  `pylock.toml` lock file, or `pyproject.toml`. From the Projects page the file is saved into the
+  project folder.
 - **Security check** – look up known vulnerabilities in the installed packages in the
   [OSV database](https://osv.dev), see severity and fixed versions, and upgrade to fixed versions.
 - **Dependencies** – see what each package requires and what requires it (tree view and a
@@ -19,8 +25,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   installed into any environment in one click, and optionally installed into new environments.
 - **Virtual environments** – create environments from any installed Python, manage their packages,
   open an activated terminal, add existing environments or delete them. Clone an environment
-  (optionally onto another Python), export it as `requirements.txt` (pinned) or `pyproject.toml`
-  (top-level packages), and create a new environment from either file.
+  (optionally onto another Python), update or export it, and create a new environment from a
+  `requirements.txt` or `pyproject.toml`.
 - **Projects** – add a project folder with `pyproject.toml`, `requirements.txt` or `uv.lock`. The app
   finds its environment (`.venv`, `venv` or `env`) or creates `.venv`, lists each requirement as
   OK, missing or wrong version, and syncs it in one click (`uv sync --frozen` when there is a
@@ -65,6 +71,8 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Virtual environments | `uv venv` when uv is available, otherwise standard library `venv`. |
 | Projects | Requirements are read from `requirements.txt` (following `-r` includes) or `pyproject.toml` and compared with the environment's installed metadata; markers are evaluated for the environment's Python. |
 | Scheduled checks | `pip list --outdated` plus the security check for each environment and app-installed Python, at most once a day; results are cached in `cache/health.json`. |
+| Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
+| Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. |
 | Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
 App data (installed Pythons, environments, download cache, `config.json`, `logs/`):
@@ -83,7 +91,7 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # security, health, disk, logs
+          # lock, security, health, disk, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```

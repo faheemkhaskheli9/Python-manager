@@ -165,6 +165,27 @@ def compare(requirements: list[str], python: Path) -> list[Check]:
     return result
 
 
+def held_back(upgrades: list[packages.Upgrade], requirements: list[str]) -> dict[str, str]:
+    """Upgrades the project's requirements exclude: package name -> the requirement that pins it."""
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    pins: dict[str, list[Requirement]] = {}
+    for text in requirements:
+        try:
+            req = Requirement(text)
+        except InvalidRequirement:
+            continue
+        if req.specifier:
+            pins.setdefault(deps.normalize(req.name), []).append(req)
+    result = {}
+    for upgrade in upgrades:
+        for req in pins.get(deps.normalize(upgrade.name), []):
+            if not req.specifier.contains(upgrade.latest, prereleases=True):
+                result[upgrade.name] = str(req)
+                break
+    return result
+
+
 def can_uv_sync(project: Project) -> bool:
     """``uv sync`` installs the lock file exactly, but only into the project's ``.venv``."""
     env = project.env()

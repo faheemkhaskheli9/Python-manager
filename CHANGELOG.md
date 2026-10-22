@@ -10,6 +10,13 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Update all: choose which outdated packages to update from a list showing installed and new
+  versions, with major versions flagged and, on the Projects page, updates the project's
+  requirements exclude left unticked. Afterwards it shows what changed and any broken
+  requirements (`pip check`). Available on the Packages, Virtual Environments and Projects pages. ([#5])
+- Export / lock: save an environment as pinned `requirements.txt` (all or top-level packages),
+  `requirements.txt` with hashes, `pylock.toml` (PEP 751) or `pyproject.toml`; the Projects page
+  saves into the project folder. ([#5])
 - Loading indicators: a spinner over each list while it loads (installed and available Pythons,
   packages, environments, project requirements, disk usage), a status bar indicator for background
   work, and "checking…" in the *Updates* column while environments are checked. ([#4])
@@ -92,6 +99,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#1]: https://github.com/faheemkhaskheli9/python-manager/pull/1
 [#3]: https://github.com/faheemkhaskheli9/python-manager/pull/3
 [#4]: https://github.com/faheemkhaskheli9/python-manager/pull/4
+[#5]: https://github.com/faheemkhaskheli9/python-manager/pull/5
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf

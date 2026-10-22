@@ -62,3 +62,11 @@ def test_create_env_and_sync(tmp_path, backend):
     env = projects.create_env(project, Path(sys.executable))
     assert project.env() == env
     assert "pm-demo" in {p.name.lower() for p in packages.list_packages(env.executable)}
+
+
+def test_held_back():
+    from python_manager.core.packages import Upgrade
+
+    upgrades = [Upgrade("Django", "4.2", "5.1"), Upgrade("requests", "2.30", "2.32"), Upgrade("rich", "13", "14")]
+    held = projects.held_back(upgrades, ["django>=4,<5", "requests>=2", "rich", "not a valid req!"])
+    assert held == {"Django": "django<5,>=4"}
