@@ -11,9 +11,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
+from .. import __version__
 from .tasks import NULL, TaskContext
 
-USER_AGENT = "python-manager/0.1"
+USER_AGENT = f"python-manager/{__version__}"
 _CHUNK = 256 * 1024
 
 
