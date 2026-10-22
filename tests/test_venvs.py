@@ -4,9 +4,10 @@ from pathlib import Path
 import pytest
 
 from python_manager.core import paths, venvs
+from python_manager.core.tasks import CommandError
 
 
-def test_create_list_delete_managed():
+def test_create_list_delete_managed(backend):
     env = venvs.create("demo", Path(sys.executable), with_pip=False)
     assert env.managed and env.valid
     assert env.path.parent == paths.envs_dir()
@@ -40,8 +41,13 @@ def test_invalid_name_and_register():
         venvs.register(paths.data_dir())
 
 
-def test_failed_create_cleans_up(tmp_path):
+def test_failed_create_cleans_up(backend, tmp_path):
     missing = tmp_path / "no-python"
-    with pytest.raises(OSError):
+    with pytest.raises((OSError, CommandError)):
         venvs.create("broken", missing)
     assert not (paths.envs_dir() / "broken").exists()
+
+
+def test_create_with_pip(backend, tmp_path):
+    env = venvs.create("seeded", Path(sys.executable), tmp_path, with_pip=True)
+    assert (env.executable.parent / ("pip.exe" if sys.platform == "win32" else "pip")).exists()

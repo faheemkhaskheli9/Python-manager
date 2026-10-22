@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from python_manager.core import packages, venvs
+from python_manager.core import deps, packages, venvs
 
 
 def _build_wheel(folder: Path) -> Path:
@@ -31,23 +31,38 @@ def _build_wheel(folder: Path) -> Path:
     return wheel
 
 
-@pytest.fixture(scope="module")
-def env(tmp_path_factory):
-    return venvs.create("pkgs", Path(sys.executable), tmp_path_factory.mktemp("envs"), with_pip=True)
-
-
-def test_install_list_uninstall(env, tmp_path):
+def test_install_list_uninstall(backend, tmp_path):
+    env = venvs.create("pkgs", Path(sys.executable), tmp_path, with_pip=True)
     python = env.executable
+    assert packages.backend() == backend
     assert packages.has_pip(python)
     wheel = _build_wheel(tmp_path)
 
     packages.install(python, [str(wheel)], extra_args=["--no-index"])
     names = {p.name.lower(): p.version for p in packages.list_packages(python)}
     assert names.get("pm-demo") == "1.0"
-    assert packages.freeze(python).startswith("pm-demo")
+    assert any(line.startswith("pm-demo") for line in packages.freeze(python).splitlines())
+
+    graph = deps.load_graph(python)
+    assert graph["pm-demo"].version == "1.0"
+    assert "pip" in graph
 
     packages.uninstall(python, ["pm-demo"])
     assert "pm-demo" not in {p.name.lower() for p in packages.list_packages(python)}
+
+
+def test_upgrade_all_nothing_outdated(monkeypatch):
+    monkeypatch.setattr(packages, "outdated", lambda python: {})
+    monkeypatch.setattr(packages, "install", lambda *a, **k: pytest.fail("nothing to upgrade"))
+    assert packages.upgrade_all(Path(sys.executable)) == []
+
+
+def test_upgrade_all(monkeypatch):
+    calls = []
+    monkeypatch.setattr(packages, "outdated", lambda python: {"b": "2", "A": "3"})
+    monkeypatch.setattr(packages, "install", lambda python, names, ctx, upgrade: calls.append((names, upgrade)))
+    assert packages.upgrade_all(Path(sys.executable)) == ["A", "b"]
+    assert calls == [(["A", "b"], True)]
 
 
 def test_pip_missing(tmp_path):

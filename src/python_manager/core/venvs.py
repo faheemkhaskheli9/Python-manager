@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, paths
+from . import config, packages, paths
 from .fs import remove_tree
 from .interpreters import VENV, Interpreter
 from .tasks import NULL, TaskContext, run
@@ -113,13 +113,20 @@ def create(
     if target.exists():
         raise FileExistsError(f"{target} already exists")
     parent.mkdir(parents=True, exist_ok=True)
-    cmd = [str(base_python), "-m", "venv", str(target)]
+    uv = packages.uv_path()
+    if uv:
+        # uv always seeds the latest pip, so upgrade_deps has nothing left to do.
+        cmd = [uv, "venv", "--python", str(base_python), str(target)]
+        if with_pip:
+            cmd.append("--seed")
+    else:
+        cmd = [str(base_python), "-m", "venv", str(target)]
+        if not with_pip:
+            cmd.append("--without-pip")
+        elif upgrade_deps:
+            cmd.append("--upgrade-deps")
     if system_site_packages:
         cmd.append("--system-site-packages")
-    if not with_pip:
-        cmd.append("--without-pip")
-    elif upgrade_deps:
-        cmd.append("--upgrade-deps")
     try:
         run(cmd, ctx)
     except BaseException:

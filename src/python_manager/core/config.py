@@ -14,6 +14,7 @@ DEFAULTS: dict[str, Any] = {
     "show_freethreaded": False,
     "venvs": [],  # externally located environments registered by the user
     "favorites": [],  # package names the user marked as favourite
+    "use_uv": True,  # use uv for packages and environments when it is installed
 }
 
 _lock = threading.Lock()

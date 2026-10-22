@@ -25,9 +25,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import favorites, packages
+from ..core import deps, favorites, packages
 from ..core.interpreters import Interpreter
 from ..core.packages import Package, PipMissing, ProjectInfo
+from .deps_dialog import DependencyDialog
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, make_table, selected_payloads
@@ -43,6 +44,8 @@ class PackagesPage(QWidget):
         self.state, self.tasks = state, tasks
         self._packages: list[Package] = []
         self._latest: dict[str, str] = {}
+        self._graph: deps.Graph = {}
+        self._required_by: dict[str, list[str]] = {}
         self._generation = 0
         self._pending_select: Optional[Path] = None
 
@@ -70,20 +73,22 @@ class PackagesPage(QWidget):
         filter_row = QHBoxLayout()
         filter_row.addWidget(self.filter, 1)
         filter_row.addWidget(self.favorites_only)
-        self.table = make_table([STAR, "Package", "Version", "Latest"], stretch=1, multi=True)
+        self.table = make_table([STAR, "Package", "Version", "Latest", "Required by"], stretch=4, multi=True)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.status = QLabel()
         self.uninstall_btn = button("Uninstall", self.uninstall)
         self.upgrade_btn = button("Upgrade", self.upgrade)
         self.favorite_btn = button("★ Favourite", self.toggle_selected_favorites, "Mark or unmark as favourite")
+        self.deps_btn = button("Dependencies…", self.show_dependencies, "What the package requires and what requires it")
         left = QWidget()
         lay = QVBoxLayout(left)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addLayout(filter_row)
         lay.addWidget(self.table)
         lay.addWidget(self.status)
-        lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn, self.favorite_btn,
-                                 button("Check for updates", self.check_updates)))
+        lay.addLayout(button_row(self.uninstall_btn, self.upgrade_btn, self.favorite_btn, self.deps_btn))
+        lay.addLayout(button_row(button("Check for updates", self.check_updates),
+                                 button("Upgrade all", self.upgrade_all, "Upgrade every outdated package")))
         lay.addLayout(button_row(button("Install from file…", self.install_from_file,
                                         "Install a wheel, source archive or requirements.txt"),
                                  button("Export requirements…", self.export_requirements)))
@@ -178,7 +183,7 @@ class PackagesPage(QWidget):
 
     def reload(self) -> None:
         interp = self.python
-        self._packages, self._latest = [], {}
+        self._packages, self._latest, self._graph, self._required_by = [], {}, {}, {}
         self.pip_bar.hide()
         self._render()
         if interp is None:
@@ -188,9 +193,10 @@ class PackagesPage(QWidget):
         generation = self._generation
         self.status.setText("Loading packages…")
 
-        def done(items):
+        def done(result):
             if generation == self._generation:
-                self._packages = items
+                self._packages, self._graph = result
+                self._required_by = deps.required_by(self._graph)
                 self._render()
 
         def failed(message):
@@ -202,8 +208,15 @@ class PackagesPage(QWidget):
             else:
                 self.status.setText(f"Could not list packages: {message.splitlines()[0]}")
 
-        self.tasks.run("Listing packages", lambda _: packages.list_packages(interp.executable),
-                       done, failed, foreground=False)
+        def load(_ctx):
+            items = packages.list_packages(interp.executable)
+            try:
+                graph = deps.load_graph(interp.executable)
+            except Exception:  # dependency info is optional (e.g. Python < 3.8)
+                graph = {}
+            return items, graph
+
+        self.tasks.run("Listing packages", load, done, failed, foreground=False)
 
     def _render(self) -> None:
         text = self.filter.text().strip().lower()
@@ -213,12 +226,13 @@ class PackagesPage(QWidget):
         for p in self._packages:
             fav = favorites.normalize(p.name) in favs
             if text in p.name.lower() and (fav or not only_favs):
-                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""))))
+                users = ", ".join(self._required_by.get(deps.normalize(p.name), []))
+                rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), users)))
         fill_table(self.table, rows)
         self._render_favorites()
         if self._packages:
             updates = f", {len(self._latest)} with updates" if self._latest else ""
-            self.status.setText(f"{len(self._packages)} packages{updates}")
+            self.status.setText(f"{len(self._packages)} packages{updates} · using {packages.backend()}")
         self._update_buttons()
 
     def _selected_names(self) -> list[str]:
@@ -229,6 +243,7 @@ class PackagesPage(QWidget):
         self.uninstall_btn.setEnabled(has)
         self.upgrade_btn.setEnabled(has)
         self.favorite_btn.setEnabled(has)
+        self.deps_btn.setEnabled(len(self.table.selectionModel().selectedRows()) == 1 and bool(self._graph))
 
     def _run(self, title: str, fn) -> None:
         """Run a modifying pip operation, then reload the package list."""
@@ -243,14 +258,41 @@ class PackagesPage(QWidget):
         names = self._selected_names()
         if not names:
             return
-        if QMessageBox.question(self, "Uninstall", "Uninstall " + ", ".join(names) + "?") != QMessageBox.StandardButton.Yes:
+        text = "Uninstall " + ", ".join(names) + "?"
+        needed = deps.dependents(self._graph, names)
+        if needed:
+            lines = "".join(f"<li><b>{n}</b> is required by {', '.join(users)}</li>" for n, users in needed.items())
+            text += f"<p>Other packages depend on this:</p><ul>{lines}</ul>They may stop working."
+        box = QMessageBox(QMessageBox.Icon.Warning if needed else QMessageBox.Icon.Question, "Uninstall", text,
+                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        unused = deps.unused_after_removal(self._graph, names)
+        if unused:
+            check = QCheckBox(f"Also remove {len(unused)} unused dependencies: " + ", ".join(unused))
+            box.setCheckBox(check)
+        if box.exec() != QMessageBox.StandardButton.Yes:
             return
+        if unused and box.checkBox().isChecked():
+            names = names + unused
         self._run("Uninstalling " + ", ".join(names), lambda py, ctx: packages.uninstall(py, names, ctx))
+
+    def show_dependencies(self) -> None:
+        names = self._selected_names()
+        if len(names) == 1:
+            DependencyDialog(self._graph, names[0], self).exec()
 
     def upgrade(self) -> None:
         names = self._selected_names()
         if names:
             self._run("Upgrading " + ", ".join(names), lambda py, ctx: packages.install(py, names, ctx, upgrade=True))
+
+    def upgrade_all(self) -> None:
+        interp = self.python
+        if interp is None:
+            return
+        if QMessageBox.question(self, "Upgrade all",
+                                f"Upgrade every outdated package in {interp.name}?") != QMessageBox.StandardButton.Yes:
+            return
+        self._run("Upgrading all packages", packages.upgrade_all)
 
     def check_updates(self) -> None:
         interp = self.python

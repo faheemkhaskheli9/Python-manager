@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import urllib.error
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import net
+from . import config, net
 from .tasks import NULL, CommandError, TaskContext, capture, run
 
 PYPI_JSON = "https://pypi.org/pypi/{name}/json"
@@ -36,16 +37,36 @@ class ProjectInfo:
     home_page: str = ""
 
 
+def uv_path() -> Optional[str]:
+    """The uv executable when it is installed and enabled in settings, else None."""
+    if not config.get("use_uv"):
+        return None
+    return shutil.which("uv")
+
+
+def backend() -> str:
+    return "uv" if uv_path() else "pip"
+
+
 def _pip(python: Path) -> list[str]:
     return [str(python), "-m", "pip"]
 
 
-def _pip_json(python: Path, *args: str) -> list[dict]:
-    proc = capture([*_pip(python), *args, "--format=json"], timeout=300)
+def _cmd(python: Path, command: str, *args: str) -> list[str]:
+    """A pip-style command for ``python``, run through uv when available."""
+    uv = uv_path()
+    if uv:
+        return [uv, "pip", command, "--python", str(python), *args]
+    return [*_pip(python), command, *args]
+
+
+def _pip_json(python: Path, command: str, *args: str) -> list[dict]:
+    cmd = _cmd(python, command, *args, "--format=json")
+    proc = capture(cmd, timeout=300)
     if proc.returncode != 0:
         if "No module named pip" in proc.stderr:
             raise PipMissing(f"pip is not installed for {python}")
-        raise CommandError([*_pip(python), *args], proc.returncode, proc.stderr or proc.stdout)
+        raise CommandError(cmd, proc.returncode, proc.stderr or proc.stdout)
     for line in reversed(proc.stdout.strip().splitlines()):
         line = line.strip()
         if line.startswith("["):
@@ -84,27 +105,41 @@ def install(
     specs = [s for s in specs if s.strip()]
     if not specs:
         raise ValueError("Nothing to install")
-    cmd = [*_pip(python), "install"]
-    if upgrade:
-        cmd.append("--upgrade")
-    run([*cmd, *extra_args, *specs], ctx)
+    args = ["--upgrade"] if upgrade else []
+    run(_cmd(python, "install", *args, *extra_args, *specs), ctx)
+
+
+def upgrade_all(python: Path, ctx: TaskContext = NULL) -> list[str]:
+    """Upgrade every outdated package. Returns the names that were upgraded."""
+    ctx.log("Checking for outdated packages…")
+    names = sorted(outdated(python), key=str.lower)
+    ctx.check()
+    if not names:
+        ctx.log("All packages are up to date.")
+        return []
+    install(python, names, ctx, upgrade=True)
+    return names
 
 
 def install_requirements(python: Path, requirements: Path, ctx: TaskContext = NULL) -> None:
-    run([*_pip(python), "install", "-r", str(requirements)], ctx)
+    run(_cmd(python, "install", "-r", str(requirements)), ctx)
 
 
 def uninstall(python: Path, names: Iterable[str], ctx: TaskContext = NULL) -> None:
     names = list(names)
     if not names:
         raise ValueError("Nothing to uninstall")
-    run([*_pip(python), "uninstall", "-y", *names], ctx)
+    args = [] if uv_path() else ["-y"]
+    run(_cmd(python, "uninstall", *args, *names), ctx)
 
 
 def download(
     python: Path, specs: Iterable[str], dest: Path, ctx: TaskContext = NULL, with_deps: bool = True
 ) -> None:
-    """Download distributions (wheels/sdists) to ``dest`` without installing them."""
+    """Download distributions (wheels/sdists) to ``dest`` without installing them.
+
+    Always uses pip: uv has no download command.
+    """
     cmd = [*_pip(python), "download", "-d", str(dest)]
     if not with_deps:
         cmd.append("--no-deps")
@@ -112,9 +147,10 @@ def download(
 
 
 def freeze(python: Path) -> str:
-    proc = capture([*_pip(python), "freeze"], timeout=120)
+    cmd = _cmd(python, "freeze")
+    proc = capture(cmd, timeout=120)
     if proc.returncode != 0:
-        raise CommandError([*_pip(python), "freeze"], proc.returncode, proc.stderr)
+        raise CommandError(cmd, proc.returncode, proc.stderr)
     return proc.stdout
 
 
