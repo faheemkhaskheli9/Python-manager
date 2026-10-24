@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Iterable
 
 from . import deps, packages
 from .tasks import NULL, CommandError, TaskContext
@@ -54,33 +55,103 @@ def pyproject_for(python: Path, name: str, python_version: str, skip: frozenset[
     return "\n".join(lines)
 
 
-def _toml_dependencies(text: str) -> list[str]:
-    """``project.dependencies`` without a TOML library (Python < 3.11)."""
-    section = re.search(r"^\[project\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
-    if not section:
-        return []
-    start = re.search(r"^dependencies\s*=\s*\[", section.group(1), re.M)
-    if not start:
-        return []
-    result = []
-    for token in re.finditer(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'|#[^\n]*|\]', section.group(1)[start.end():]):
-        text = token.group()
-        if text == "]":
-            break
-        if text[0] == '"':
-            result.append(json.loads(text))
-        elif text[0] == "'":
-            result.append(text[1:-1])
+_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'|#[^\n]*|\{[^}]*\}|\]')
+
+
+def _toml_table(text: str, table: str) -> str:
+    match = re.search(rf"^\[{re.escape(table)}\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    return match.group(1) if match else ""
+
+
+def _toml_string(value: str) -> str:
+    return json.loads(value) if value[0] == '"' else value[1:-1]
+
+
+def _toml_arrays(text: str, table: str) -> dict[str, list]:
+    """Arrays of strings (and ``{include-group = "…"}`` tables) in one TOML table, without a TOML library."""
+    body, result = _toml_table(text, table), {}
+    for start in re.finditer(r'^\s*("[^"]+"|[A-Za-z0-9_.-]+)\s*=\s*\[', body, re.M):
+        key = start.group(1).strip('"')
+        items = result[key] = []
+        for token in _TOKEN.finditer(body, start.end()):
+            value = token.group()
+            if value == "]":
+                break
+            if value[0] in "\"'":
+                items.append(_toml_string(value))
+            elif value[0] == "{":
+                group = re.search(r'include-group\s*=\s*("[^"]*"|\'[^\']*\')', value)
+                if group:
+                    items.append({"include-group": _toml_string(group.group(1))})
     return result
 
 
-def pyproject_dependencies(path: Path) -> list[str]:
+def _toml_fallback(text: str) -> dict:
+    """The parts of a pyproject.toml read here, for Python < 3.11 (no tomllib)."""
+    project = _toml_arrays(text, "project")
+    name = re.search(r'^name\s*=\s*("[^"]*"|\'[^\']*\')', _toml_table(text, "project"), re.M)
+    if name:
+        project["name"] = _toml_string(name.group(1))
+    project["optional-dependencies"] = _toml_arrays(text, "project.optional-dependencies")
+    return {"project": project, "dependency-groups": _toml_arrays(text, "dependency-groups")}
+
+
+def read_pyproject(path: Path) -> dict:
     text = Path(path).read_text(encoding="utf-8")
     try:
         import tomllib
     except ImportError:
-        return _toml_dependencies(text)
-    return list(tomllib.loads(text).get("project", {}).get("dependencies", []))
+        return _toml_fallback(text)
+    return tomllib.loads(text)
+
+
+def pyproject_dependencies(path: Path) -> list[str]:
+    return list(read_pyproject(path).get("project", {}).get("dependencies", []))
+
+
+def pyproject_options(path: Path) -> tuple[list[str], list[str]]:
+    """Names of the optional-dependency extras and the dependency groups (PEP 735) in a pyproject.toml."""
+    data = read_pyproject(path)
+    return list(data.get("project", {}).get("optional-dependencies", {})), list(data.get("dependency-groups", {}))
+
+
+def pyproject_requirements(path: Path, extras: Iterable[str] = (), groups: Iterable[str] = ()) -> list[str]:
+    """The project's dependencies plus those of the chosen extras and dependency groups.
+
+    Extras that name the project itself (``myapp[test]``) and ``include-group`` entries are expanded.
+    """
+    data = read_pyproject(path)
+    project = data.get("project", {})
+    own = deps.normalize(project.get("name", "")) if project.get("name") else None
+    optional = {deps.normalize(k): v for k, v in project.get("optional-dependencies", {}).items()}
+    group_table = {deps.normalize(k): v for k, v in data.get("dependency-groups", {}).items()}
+    result: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(items, kind: str, name: str) -> None:
+        if (kind, name) in seen:
+            return
+        seen.add((kind, name))
+        for item in items:
+            if isinstance(item, dict):
+                included = deps.normalize(item.get("include-group", ""))
+                add(group_table.get(included, []), "group", included)
+                continue
+            match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([^\]]*)\])?\s*(;.*)?$", item)
+            if own and match and deps.normalize(match.group(1)) == own and not match.group(3):
+                for extra in (match.group(2) or "").split(","):
+                    if extra.strip():
+                        add(optional.get(deps.normalize(extra), []), "extra", deps.normalize(extra))
+                continue
+            if item not in result:
+                result.append(item)
+
+    add(project.get("dependencies", []), "base", "")
+    for extra in extras:
+        add(optional.get(deps.normalize(extra), []), "extra", deps.normalize(extra))
+    for group in groups:
+        add(group_table.get(deps.normalize(group), []), "group", deps.normalize(group))
+    return result
 
 
 def install_file(python: Path, path: Path, ctx: TaskContext = NULL) -> None:

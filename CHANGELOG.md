@@ -10,6 +10,14 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Projects page: compare against any `requirements*.txt` or `pyproject.toml` with an extra, a
+  dependency group or all of them; list installed packages the requirements do not name; refresh
+  automatically when a requirements file or the environment changes. ([#6])
+- Disk Usage page: flag environments whose base Python is gone or that have not changed for a
+  long time, *Select stale*, and delete several items at once. Broken environments are also marked
+  on the Virtual Environments page. ([#6])
+- *File → Settings*: uv, default Python and location for new environments, check interval,
+  security lookup and notifications for scheduled checks, and the stale-environment limit. ([#6])
 - Update all: choose which outdated packages to update from a list showing installed and new
   versions, with major versions flagged and, on the Projects page, updates the project's
   requirements exclude left unticked. Afterwards it shows what changed and any broken
@@ -32,6 +40,8 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 - Screenshots in the README. ([#3])
 
 ### Changed
+- *Use uv when installed* and *Check environments daily* moved from the File menu into
+  Settings. ([#6])
 - Faster package lists: names, versions and dependencies are read from installed metadata in one
   call instead of `pip list` plus a second call (about 3× faster with pip); they also load when
   pip is missing. ([#4])
@@ -100,6 +110,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#3]: https://github.com/faheemkhaskheli9/python-manager/pull/3
 [#4]: https://github.com/faheemkhaskheli9/python-manager/pull/4
 [#5]: https://github.com/faheemkhaskheli9/python-manager/pull/5
+[#6]: https://github.com/faheemkhaskheli9/python-manager/pull/6
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf

@@ -23,6 +23,7 @@ from .disk_page import DiskPage
 from .packages_page import PackagesPage
 from .projects_page import ProjectsPage
 from .pythons_page import PythonsPage
+from .settings_dialog import SettingsDialog
 from .state import AppState
 from .tasks import TaskManager
 from .venvs_page import VenvsPage
@@ -113,20 +114,16 @@ class MainWindow(QMainWindow):
         open_log = QAction("Open log file", self)
         open_log.triggered.connect(self._open_log)
         file_menu.addAction(open_log)
-        use_uv = QAction("Use uv when installed", self, checkable=True)
-        use_uv.setChecked(bool(config.get("use_uv")))
-        use_uv.setToolTip("Faster installs and environment creation with uv (https://docs.astral.sh/uv/)")
-        use_uv.toggled.connect(self._set_use_uv)
-        file_menu.addAction(use_uv)
+        settings = QAction("Settings…", self)
+        settings.setShortcut(QKeySequence.StandardKey.Preferences)
+        settings.setMenuRole(QAction.MenuRole.PreferencesRole)
+        settings.triggered.connect(self._settings)
+        file_menu.addAction(settings)
         file_menu.addSeparator()
         check_now = QAction("Check environments now", self)
         check_now.setToolTip("Look for outdated and vulnerable packages in every environment")
         check_now.triggered.connect(lambda: self.check_environments(manual=True))
         file_menu.addAction(check_now)
-        auto_check = QAction("Check environments daily", self, checkable=True)
-        auto_check.setChecked(bool(config.get("auto_check")))
-        auto_check.toggled.connect(lambda on: config.set("auto_check", on))
-        file_menu.addAction(auto_check)
         file_menu.addSeparator()
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -141,8 +138,20 @@ class MainWindow(QMainWindow):
         about.triggered.connect(self._about)
         help_menu.addAction(about)
 
-    def _set_use_uv(self, enabled: bool) -> None:
-        config.set("use_uv", enabled)
+    def _settings(self) -> None:
+        before = config.load()
+        dialog = SettingsDialog(self.state, self)
+        if dialog.exec() != SettingsDialog.DialogCode.Accepted:
+            return
+        dialog.save()
+        after = config.load()
+        if after["use_uv"] != before["use_uv"]:
+            self._use_uv_changed(after["use_uv"])
+        if after["stale_days"] != before["stale_days"] and self.disk.scanned:
+            self.disk.scan()
+        self._maybe_check()  # the interval may have shortened
+
+    def _use_uv_changed(self, enabled: bool) -> None:
         backend = packages.backend()
         if enabled and backend != "uv":
             self.status_label.setText("uv was not found on PATH; using pip")
@@ -183,16 +192,18 @@ class MainWindow(QMainWindow):
             self.state.set_health_checking(False)
             self.status_label.setText(f"Environment check failed: {message.splitlines()[0]}")
 
+        security = bool(config.get("auto_check_security")) or manual
         self._checking = True
         started = self.tasks.run(f"Checking {len(targets)} environments",
-                                 lambda ctx: health.check_all(targets, ctx), done, failed, foreground=manual)
+                                 lambda ctx: health.check_all(targets, ctx, scan_security=security),
+                                 done, failed, foreground=manual)
         if started:
             self.state.set_health_checking(True)
         else:
             self._checking = False
 
     def _notify(self, title: str, message: str) -> None:
-        if not QSystemTrayIcon.isSystemTrayAvailable():
+        if not config.get("notify") or not QSystemTrayIcon.isSystemTrayAvailable():
             return
         if self.tray is None:
             self.tray = QSystemTrayIcon(self.windowIcon() if not self.windowIcon().isNull()

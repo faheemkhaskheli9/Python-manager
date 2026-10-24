@@ -5,12 +5,13 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import paths, python_versions, venvs
+from . import config, paths, python_versions, venvs
 from .fs import remove_tree
 from .tasks import NULL, TaskContext, capture, run
 
@@ -32,10 +33,36 @@ class Usage:
     path: Path
     size: int  # bytes
     payload: object = None  # the VirtualEnv or Interpreter behind an ENV or PYTHON row
+    note: str = ""  # why an environment is stale
+    stale: bool = False  # broken, or unchanged for longer than the ``stale_days`` setting
 
     @property
     def cleanable(self) -> bool:
         return self.kind in CACHES
+
+
+BROKEN = "base Python missing"
+
+
+def _age(seconds: float) -> str:
+    days = int(seconds // 86400)
+    if days >= 365:
+        return f"{days // 365} year{'s' * (days >= 730)}"
+    if days >= 60:
+        return f"{days // 30} months"
+    return f"{days} day{'s' * (days != 1)}"
+
+
+def env_status(env: venvs.VirtualEnv, now: Optional[float] = None) -> tuple[str, bool]:
+    """A note for an environment and whether it is stale (broken, or unchanged for too long)."""
+    if venvs.is_broken(env):
+        return BROKEN, True
+    changed = venvs.last_changed(env)
+    if not changed:
+        return "", False
+    age = (now or time.time()) - changed
+    stale = age >= float(config.get("stale_days") or 180) * 86400
+    return (f"unchanged for {_age(age)}" if stale else ""), stale
 
 
 def dir_size(path: Path) -> int:
@@ -119,7 +146,8 @@ def scan(ctx: TaskContext = NULL) -> list[Usage]:
         for done, ((kind, name, path, payload), size) in enumerate(zip(items, sizes), 1):
             ctx.check()
             ctx.progress(done, len(items))
-            result.append(Usage(kind, name, path, size, payload))
+            note, stale = env_status(payload) if kind == ENV else ("", False)
+            result.append(Usage(kind, name, path, size, payload, note, stale))
     return sorted(result, key=lambda u: u.size, reverse=True)
 
 

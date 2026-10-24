@@ -15,7 +15,7 @@ def test_add_remove_and_detect(tmp_path):
     projects.add(folder)  # no duplicates
     assert projects.list_projects() == [project]
     assert project.files == ["requirements.txt", "uv.lock"]
-    assert project.sources() == [folder / "requirements.txt"]
+    assert [s.path for s in project.sources()] == [folder / "requirements.txt"]
     assert project.env() is None
     projects.remove(folder)
     assert projects.list_projects() == []
@@ -70,3 +70,40 @@ def test_held_back():
     upgrades = [Upgrade("Django", "4.2", "5.1"), Upgrade("requests", "2.30", "2.32"), Upgrade("rich", "13", "14")]
     held = projects.held_back(upgrades, ["django>=4,<5", "requests>=2", "rich", "not a valid req!"])
     assert held == {"Django": "django<5,>=4"}
+
+
+def test_sources_with_extras_and_groups(tmp_path):
+    (tmp_path / "requirements-dev.txt").write_text("pytest\n")
+    (tmp_path / "requirements.txt").write_text("requests\n")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "app"\ndependencies = ["rich"]\n'
+        '[project.optional-dependencies]\ndocs = ["sphinx"]\n[dependency-groups]\ndev = ["ruff"]\n')
+    sources = projects.Project(tmp_path).sources()
+    assert [s.label for s in sources] == [
+        "requirements.txt", "requirements-dev.txt", "pyproject.toml", "pyproject.toml [docs]",
+        "pyproject.toml (group dev)", "pyproject.toml (all extras and groups)"]
+    assert projects.read_requirements(sources[3]) == ["rich", "sphinx"]
+    assert projects.read_requirements(sources[5]) == ["rich", "sphinx", "ruff"]
+
+
+def test_sync_pyproject_source(tmp_path, monkeypatch):
+    venvs.create_at(tmp_path / ".venv", Path(sys.executable), with_pip=False)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "app"\ndependencies = ["rich"]\n[dependency-groups]\ndev = ["ruff"]\n')
+    calls = []
+    monkeypatch.setattr(packages, "install", lambda python, specs, ctx: calls.append(list(specs)))
+    project = projects.Project(tmp_path)
+    projects.sync(project, projects.Source(tmp_path / "pyproject.toml", groups=("dev",)))
+    assert calls == [["rich", "ruff"]]
+
+
+def test_compare_unlisted(tmp_path, monkeypatch):
+    from python_manager.core import deps
+
+    graph = {"requests": deps.Dist("requests", "2.0", ("idna",)), "idna": deps.Dist("idna", "3", ()),
+             "black": deps.Dist("black", "24", ()), "pip": deps.Dist("pip", "24", ())}
+    monkeypatch.setattr(deps, "load_graph", lambda python: graph)
+    monkeypatch.setattr(projects, "marker_environment", lambda python: {})
+    checks = projects.compare(["requests"], Path(sys.executable), unlisted=True)
+    assert [(c.name, c.status) for c in checks] == [("requests", projects.OK), ("black", projects.UNLISTED)]
+    assert len(projects.compare(["requests"], Path(sys.executable))) == 1

@@ -22,6 +22,7 @@ OK = "OK"
 MISSING = "Missing"
 MISMATCH = "Wrong version"
 UNCHECKED = "Not checked"
+UNLISTED = "Not listed"  # installed on purpose (nothing requires it) but not in the requirements
 
 # Runs inside the target interpreter: the values PEP 508 markers are evaluated against.
 _MARKERS = r"""
@@ -66,9 +67,52 @@ class Project:
                 return venvs.load(self.path / name, managed=False)
         return None
 
-    def sources(self) -> list[Path]:
-        """Files the requirements can be read from, preferred first."""
-        return [self.path / f for f in (REQUIREMENTS, PYPROJECT) if (self.path / f).is_file()]
+    def sources(self) -> list["Source"]:
+        """Where the requirements can be read from, preferred first: requirements files, then
+        pyproject.toml on its own, with each extra and dependency group, and with all of them."""
+        files = sorted(self.path.glob("requirements*.txt"), key=lambda p: (p.name != REQUIREMENTS, p.name))
+        result = [Source(f) for f in files if f.is_file()]
+        pyproject = self.path / PYPROJECT
+        if pyproject.is_file():
+            result.append(Source(pyproject))
+            try:
+                extras, groups = projectfile.pyproject_options(pyproject)
+            except (OSError, ValueError):  # unreadable or invalid TOML: the base entry reports it
+                extras, groups = [], []
+            result += [Source(pyproject, extras=(e,)) for e in extras]
+            result += [Source(pyproject, groups=(g,)) for g in groups]
+            if len(extras) + len(groups) > 1:
+                result.append(Source(pyproject, tuple(extras), tuple(groups)))
+        return result
+
+    def watched_paths(self) -> list[Path]:
+        """Files and folders whose changes can change the comparison."""
+        result = [self.path] + [s.path for s in self.sources()]
+        if (self.path / UV_LOCK).is_file():
+            result.append(self.path / UV_LOCK)
+        env = self.env()
+        if env:
+            result += venvs.site_packages(env)
+        return list(dict.fromkeys(result))
+
+
+@dataclass(frozen=True)
+class Source:
+    """A requirements file, or a pyproject.toml with some of its extras and dependency groups."""
+
+    path: Path
+    extras: tuple[str, ...] = ()
+    groups: tuple[str, ...] = ()
+
+    @property
+    def label(self) -> str:
+        if len(self.extras) + len(self.groups) > 1:
+            return f"{self.path.name} (all extras and groups)"
+        if self.extras:
+            return f"{self.path.name} [{self.extras[0]}]"
+        if self.groups:
+            return f"{self.path.name} (group {self.groups[0]})"
+        return self.path.name
 
 
 @dataclass(frozen=True)
@@ -120,12 +164,13 @@ def _requirements_lines(path: Path, seen: set[str]) -> list[str]:
     return result
 
 
-def read_requirements(path: Path) -> list[str]:
+def read_requirements(source: Path | Source) -> list[str]:
     """Requirements listed in a requirements file (following ``-r`` includes) or a pyproject.toml."""
-    path = Path(path)
-    if path.name.endswith(".toml"):
-        return projectfile.pyproject_dependencies(path)
-    return _requirements_lines(path, set())
+    if not isinstance(source, Source):
+        source = Source(Path(source))
+    if source.path.name.endswith(".toml"):
+        return projectfile.pyproject_requirements(source.path, source.extras, source.groups)
+    return _requirements_lines(source.path, set())
 
 
 def marker_environment(python: Path) -> dict[str, str]:
@@ -136,8 +181,12 @@ def marker_environment(python: Path) -> dict[str, str]:
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
-def compare(requirements: list[str], python: Path) -> list[Check]:
-    """Each requirement that applies to ``python`` and whether the installed version satisfies it."""
+def compare(requirements: list[str], python: Path, unlisted: bool = False) -> list[Check]:
+    """Each requirement that applies to ``python`` and whether the installed version satisfies it.
+
+    With ``unlisted``, installed packages that nothing requires and the requirements do not name
+    are added at the end as UNLISTED (packaging tools aside).
+    """
     from packaging.requirements import InvalidRequirement, Requirement
 
     with ThreadPoolExecutor(max_workers=2) as pool:  # two subprocesses, started together
@@ -162,6 +211,11 @@ def compare(requirements: list[str], python: Path) -> list[Check]:
         else:
             status = OK
         result.append(Check(text, req.name, dist.version if dist else "", status))
+    if unlisted:
+        named = {deps.normalize(c.name) for c in result}
+        for dist in projectfile.top_level(graph):
+            if deps.normalize(dist.name) not in named:
+                result.append(Check(dist.name, dist.name, dist.version, UNLISTED))
     return result
 
 
@@ -193,11 +247,11 @@ def can_uv_sync(project: Project) -> bool:
                 and _same(env.path, project.path / ".venv"))
 
 
-def sync(project: Project, source: Optional[Path] = None, ctx: TaskContext = NULL) -> None:
+def sync(project: Project, source: Optional[Path | Source] = None, ctx: TaskContext = NULL) -> None:
     """Install the project's requirements into its environment.
 
     With uv, a uv.lock and a ``.venv`` this is ``uv sync --frozen``; otherwise the packages listed
-    in ``source`` (default: the first of requirements.txt, pyproject.toml) are installed.
+    in ``source`` (default: the first of the project's sources) are installed.
     """
     env = project.env()
     if env is None:
@@ -208,7 +262,14 @@ def sync(project: Project, source: Optional[Path] = None, ctx: TaskContext = NUL
     source = source or next(iter(project.sources()), None)
     if source is None:
         raise FileNotFoundError(f"{project.name} has no requirements.txt or pyproject.toml")
-    projectfile.install_file(env.executable, source, ctx)
+    if isinstance(source, Source) and source.path.name.endswith(".toml"):
+        specs = read_requirements(source)
+        if specs:
+            packages.install(env.executable, specs, ctx)
+        else:
+            ctx.log(f"{source.label} lists no dependencies.")
+        return
+    projectfile.install_file(env.executable, source.path if isinstance(source, Source) else source, ctx)
 
 
 def create_env(project: Project, base_python: Path, ctx: TaskContext = NULL,

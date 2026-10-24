@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QFileSystemWatcher, Qt, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -21,15 +22,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import projects, venvs
-from ..core.projects import Check, Project
+from ..core import config, projects, venvs
+from ..core.projects import Check, Project, Source
 from .export_dialog import export_environment
 from .state import AppState
 from .tasks import TaskManager
 from .upgrade_dialog import update_all
 from .widgets import button, button_row, color_rows, fill_table, loading_overlay, make_table, open_folder
 
-STATUS_COLORS = {projects.MISSING: "#c62828", projects.MISMATCH: "#ef6c00", projects.OK: "#2e7d32"}
+STATUS_COLORS = {projects.MISSING: "#c62828", projects.MISMATCH: "#ef6c00", projects.OK: "#2e7d32",
+                 projects.UNLISTED: "#757575"}
 UV_SYNC = "uv.lock (uv sync)"
 
 
@@ -38,6 +40,12 @@ class ProjectsPage(QWidget):
         super().__init__()
         self.state, self.tasks, self.manage_packages = state, tasks, manage_packages
         self._generation = 0
+        # Re-check when a requirements file is edited or packages change outside the app.
+        self.watcher = QFileSystemWatcher(self)
+        self.refresh_timer = QTimer(self, singleShot=True, interval=800)  # editors save in bursts
+        self.refresh_timer.timeout.connect(lambda: self._show(keep_source=True))
+        self.watcher.fileChanged.connect(lambda _: self.refresh_timer.start())
+        self.watcher.directoryChanged.connect(lambda _: self.refresh_timer.start())
 
         self.list = QListWidget()
         self.list.currentItemChanged.connect(lambda *_: self._show())
@@ -62,6 +70,9 @@ class ProjectsPage(QWidget):
         form.addRow("Environment:", self.env)
         form.addRow("Requirements:", self.source)
 
+        self.unlisted = QCheckBox("Show installed packages the requirements do not list")
+        self.unlisted.setChecked(True)
+        self.unlisted.toggled.connect(lambda _: self.check())
         self.table = make_table(["Requirement", "Installed", "Status"], stretch=0)
         self.overlay = loading_overlay(self.table)
         self.summary = QLabel()
@@ -79,6 +90,7 @@ class ProjectsPage(QWidget):
         details = QGroupBox("Project")
         dlay = QVBoxLayout(details)
         dlay.addLayout(form)
+        dlay.addWidget(self.unlisted)
         dlay.addWidget(self.table)
         dlay.addWidget(self.summary)
         dlay.addLayout(button_row(self.create_btn, *self.env_buttons, self.folder_btn))
@@ -136,12 +148,15 @@ class ProjectsPage(QWidget):
 
     # Details ---------------------------------------------------------------
 
-    def _show(self) -> None:
+    def _show(self, keep_source: bool = False) -> None:
         project = self.project()
-        fill_table(self.table, [])
-        self.summary.clear()
+        previous = self.source.currentText() if keep_source else ""
+        if not keep_source:
+            fill_table(self.table, [])
+            self.summary.clear()
         self.source.blockSignals(True)
         self.source.clear()
+        self._watch(project)
         if project is None:
             for label in (self.path, self.files, self.env):
                 label.setText("—")
@@ -152,11 +167,13 @@ class ProjectsPage(QWidget):
         self.path.setText(str(project.path))
         self.files.setText(", ".join(project.files) or "none")
         self.env.setText(f"{env.path.name} (Python {env.version})" if env else "none")
-        for path in project.sources():
-            self.source.addItem(path.name, path)
+        for source in project.sources():
+            self.source.addItem(source.label, source)
         if projects.can_uv_sync(project):
             self.source.insertItem(0, UV_SYNC, None)
             self.source.setCurrentIndex(0)
+        if previous and self.source.findText(previous) >= 0:
+            self.source.setCurrentIndex(self.source.findText(previous))
         self.source.blockSignals(False)
         self._update_buttons(project, env)
         self.check()
@@ -168,13 +185,20 @@ class ProjectsPage(QWidget):
         self.sync_btn.setEnabled(env is not None and self.source.count() > 0)
         self.folder_btn.setEnabled(project is not None)
 
-    def _source(self) -> Optional[Path]:
+    def _watch(self, project: Optional[Project]) -> None:
+        if self.watcher.files() or self.watcher.directories():
+            self.watcher.removePaths(self.watcher.files() + self.watcher.directories())
+        if project:
+            # Re-added on every refresh: editors that save by replacing a file drop it from the watch.
+            self.watcher.addPaths([str(p) for p in project.watched_paths() if p.exists()])
+
+    def _source(self) -> Optional[Source]:
         return self.source.currentData()
 
-    def _compare_source(self, project: Project) -> Optional[Path]:
+    def _compare_source(self, project: Project) -> Optional[Source]:
         """uv sync installs from the lock file; its declared requirements are in pyproject.toml."""
         if self.source.currentText() == UV_SYNC:
-            return project.path / projects.PYPROJECT
+            return Source(project.path / projects.PYPROJECT)
         return self._source()
 
     def check(self) -> None:
@@ -183,14 +207,16 @@ class ProjectsPage(QWidget):
         source = self._compare_source(project) if project else None
         self._generation += 1
         generation = self._generation
-        if env is None or source is None or not source.is_file():
+        if env is None or source is None or not source.path.is_file():
             self.overlay.stop()
             fill_table(self.table, [])
             self.summary.setText("Create an environment to compare it with the requirements." if project and not env
                                  else "")
             return
-        self.summary.setText("Comparing…")
-        self.overlay.start(f"Comparing {env.name} with {source.name}…")
+        unlisted = self.unlisted.isChecked()
+        if not self.table.rowCount():  # a refresh after a file change keeps the old rows until done
+            self.summary.setText("Comparing…")
+            self.overlay.start(f"Comparing {env.name} with {source.label}…")
 
         def done(checks: list[Check]):
             if generation != self._generation:
@@ -200,12 +226,17 @@ class ProjectsPage(QWidget):
             color_rows(self.table, 2, STATUS_COLORS)
             missing = sum(c.status == projects.MISSING for c in checks)
             wrong = sum(c.status == projects.MISMATCH for c in checks)
-            if not checks:
-                self.summary.setText(f"{source.name} lists no requirements.")
+            extra = sum(c.status == projects.UNLISTED for c in checks)
+            listed = len(checks) - extra
+            if not listed:
+                text = f"{source.label} lists no requirements."
             elif missing or wrong:
-                self.summary.setText(f"{missing} missing, {wrong} with the wrong version. Press Sync to install them.")
+                text = f"{missing} missing, {wrong} with the wrong version. Press Sync to install them."
             else:
-                self.summary.setText(f"All {len(checks)} requirements are satisfied.")
+                text = f"All {listed} requirements are satisfied."
+            if extra:
+                text += f" {extra} installed package{'s are' if extra != 1 else ' is'} not listed."
+            self.summary.setText(text)
 
         def failed(message: str):
             if generation == self._generation:
@@ -213,7 +244,7 @@ class ProjectsPage(QWidget):
                 self.summary.setText(f"Could not compare: {message.splitlines()[0]}")
 
         self.tasks.run(f"Comparing {project.name}",
-                       lambda _: projects.compare(projects.read_requirements(source), env.executable),
+                       lambda _: projects.compare(projects.read_requirements(source), env.executable, unlisted),
                        done, failed, foreground=False)
 
     # Actions ---------------------------------------------------------------
@@ -226,8 +257,10 @@ class ProjectsPage(QWidget):
         if not bases:
             QMessageBox.information(self, "No Python", "Install a Python on the Python Versions page first.")
             return
+        default = config.get("default_python")
+        index = next((i for i, b in enumerate(bases) if default and str(b.executable) == default), 0)
         label, ok = QInputDialog.getItem(self, "Create environment",
-                                         f"Python for {project.name}/.venv:", [b.label for b in bases], 0, False)
+                                         f"Python for {project.name}/.venv:", [b.label for b in bases], index, False)
         if not ok:
             return
         base = bases[[b.label for b in bases].index(label)]
@@ -253,7 +286,7 @@ class ProjectsPage(QWidget):
         if not env:
             return
         source = self._compare_source(project)
-        requirements = (lambda: projects.read_requirements(source)) if source and source.is_file() else None
+        requirements = (lambda: projects.read_requirements(source)) if source and source.path.is_file() else None
         update_all(self, self.state, self.tasks, env.executable, project.name, self.check, self.overlay,
                    requirements)
 

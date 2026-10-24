@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import favorites, packages, paths, venvs
+from ..core import config, favorites, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
 from .state import AppState
@@ -47,7 +47,9 @@ class CreateEnvDialog(QDialog):
             self.base.addItem(interp.label, interp)
         if source:
             self._select_base(venvs.base_executable(source))
-        self.location = QLineEdit(str(source.path.parent if source else paths.envs_dir()))
+        elif config.get("default_python"):
+            self._select_base(Path(config.get("default_python")))
+        self.location = QLineEdit(str(source.path.parent if source else config.get("envs_location") or paths.envs_dir()))
         loc_row = QHBoxLayout()
         loc_row.addWidget(self.location, 1)
         loc_row.addWidget(button("Browse…", self._browse))
@@ -160,6 +162,8 @@ class VenvsPage(QWidget):
         self._update_buttons()
 
     def _status(self, env: VirtualEnv) -> str:
+        if venvs.is_broken(env):
+            return "⚠ base Python missing"
         if self.state.health_checking:
             return "checking…"
         report = self.state.health.get(str(env.executable))
