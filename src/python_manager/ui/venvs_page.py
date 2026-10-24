@@ -145,6 +145,8 @@ class VenvsPage(QWidget):
         self.selection_buttons = [
             button("Manage packages", self._manage),
             button("Clone…", self.clone, "New environment with the same packages"),
+            button("Rebuild…", self.rebuild,
+                   "Recreate the environment in place on another Python with the same packages"),
             button("Update all…", self._update_all, "Choose which outdated packages to update"),
             button("Export…", self._export, "Save as requirements.txt, pylock.toml or pyproject.toml"),
             button("Open terminal", self._terminal, "Open a terminal with the environment activated"),
@@ -276,6 +278,27 @@ class VenvsPage(QWidget):
         env = self._selected()
         if env:
             self.create(source=env)
+
+    def rebuild(self) -> None:
+        env = self._selected()
+        if not env:
+            return
+        bases = self.state.interpreters(include_envs=False)
+        if not bases:
+            QMessageBox.information(self, "Rebuild", "No Python found. Install one on the Python Versions page first.")
+            return
+        current = venvs.base_executable(env)
+        index = next((i for i, b in enumerate(bases)
+                      if current and os.path.realpath(b.executable) == os.path.realpath(current)), 0)
+        label, ok = QInputDialog.getItem(
+            self, f"Rebuild {env.name}",
+            f"Recreate {env.name} (Python {env.version}) in the same folder with the same packages on:",
+            [b.label for b in bases], index, False)
+        if not ok:
+            return
+        base = bases[[b.label for b in bases].index(label)]
+        self.tasks.run(f"Rebuilding {env.name} on Python {base.version}",
+                       lambda ctx: venvs.rebuild(env, base.executable, ctx), lambda _: self.state.refresh())
 
     def _create_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Create environment from", "", FILE_FILTER)

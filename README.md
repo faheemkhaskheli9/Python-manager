@@ -4,10 +4,12 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 
 - **Python versions** – browse, download, install and uninstall any CPython version
   (including pre-releases and free-threaded builds). Existing system Pythons are detected too.
-  Installed Pythons with a newer patch release are flagged and updated in one click.
+  Installed Pythons with a newer patch release are flagged and updated in one click, and the
+  environments on the old one can be rebuilt on the new one right away.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
-  check for updates and export the environment. Package names autocomplete from the full PyPI list.
+  check for updates and export the environment. A *Size* column shows the disk space of each
+  package. Package names autocomplete from the full PyPI list.
 - **Update all** – one click lists every outdated package with its installed and new version,
   flags major versions and, on the Projects page, updates the project's requirements exclude.
   Untick what to keep, update the rest, and see what changed plus any broken requirements.
@@ -27,7 +29,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Virtual environments** – create environments from any installed Python, manage their packages,
   open an activated terminal, add existing environments or delete them. Clone an environment
   (optionally onto another Python), update or export it, and create a new environment from a
-  `requirements.txt` or `pyproject.toml`.
+  `requirements.txt` or `pyproject.toml`. *Rebuild…* recreates an environment in the same folder
+  on another Python with the same packages, also when its old Python is gone.
 - **Projects** – add a project folder with `pyproject.toml`, `requirements.txt` or `uv.lock`. The app
   finds its environment (`.venv`, `venv` or `env`) or creates `.venv`, lists each requirement as
   OK, missing or wrong version, and syncs it in one click (`uv sync --frozen` when there is a
@@ -85,7 +88,9 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Python downloads | Relocatable CPython builds from [python-build-standalone](https://github.com/astral-sh/python-build-standalone), verified with SHA-256 and extracted into the app data folder. Uninstall removes that folder. No admin rights needed. |
 | Packages | `uv pip … --python <interpreter>` when uv is available, otherwise the interpreter's own `pip`; version details come from the PyPI JSON API. Downloads always use pip. |
 | Package index | The index settings are passed to every pip, uv and pipx command as `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST` and their `UV_*` equivalents. Version details and autocomplete still come from PyPI. |
-| Python updates | An installed Python is flagged when the build list has a newer patch release of the same minor version and variant. The update is installed next to it; environments keep using the old one until they are cloned onto the new one. |
+| Python updates | An installed Python is flagged when the build list has a newer patch release of the same minor version and variant. The update is installed next to it; environments keep using the old one until they are rebuilt on the new one. |
+| Rebuild | The pinned package list is read (`pip freeze`, or the metadata in site-packages when the environment's Python is gone), the old folder is moved aside, a new environment is created at the same path and the packages are installed. If that fails the old folder is put back. |
+| Package sizes | The sizes of the files each package's `RECORD` lists, read inside the environment; packages without a file list show no size. |
 | Name autocomplete | PyPI's JSON simple index (`https://pypi.org/simple/`), cached in the app data folder and refreshed weekly. |
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |
@@ -116,7 +121,7 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, licenses, health, disk, tools, conda, kernels, logs
+          # lock, security, licenses, sizes, health, disk, tools, conda, kernels, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core plus offscreen UI smoke tests
 ```

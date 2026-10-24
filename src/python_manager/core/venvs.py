@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, packages, paths, projectfile
+from . import config, deps, packages, paths, projectfile
 from .fs import remove_tree
 from .interpreters import VENV, Interpreter
 from .tasks import NULL, TaskContext, run
@@ -80,7 +80,8 @@ def _same(a: Path, b: Path) -> bool:
 
 def list_envs() -> list[VirtualEnv]:
     """Environments in the app's envs folder plus any the user registered from elsewhere."""
-    envs = [load(p, True) for p in sorted(paths.envs_dir().iterdir()) if is_venv(p)]
+    # Names that are not valid environment names (e.g. the backup kept while rebuilding) are skipped.
+    envs = [load(p, True) for p in sorted(paths.envs_dir().iterdir()) if NAME_RE.match(p.name) and is_venv(p)]
     for entry in _registered():
         path = Path(entry)
         if is_venv(path) and not any(_same(path, e.path) for e in envs):
@@ -229,6 +230,58 @@ def clone(
         file = Path(tmp) / "requirements.txt"
         file.write_text(requirements, encoding="utf-8")
         return create(name, base, location, ctx=ctx, packages_file=file, **options)
+
+
+def requirements_of(env: VirtualEnv) -> str:
+    """Pinned packages of ``env`` without the packaging tools.
+
+    Read from site-packages directly when the environment cannot run (its base Python is gone).
+    """
+    if not is_broken(env):
+        return projectfile.clone_requirements(env.executable)
+    from importlib import metadata
+
+    seen, lines = set(), []
+    for dist in metadata.distributions(path=[str(p) for p in site_packages(env)]):
+        name = dist.metadata["Name"]
+        key = deps.normalize(name or "")
+        if name and key not in seen and key not in projectfile.SKIP:
+            seen.add(key)
+            lines.append(f"{name}=={dist.version}")
+    lines.sort(key=str.lower)
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def rebuild(env: VirtualEnv, base_python: Path, ctx: TaskContext = NULL) -> VirtualEnv:
+    """Recreate ``env`` in the same folder on ``base_python`` with the same packages.
+
+    The path stays the same, so projects, Jupyter kernels and terminals keep finding it.
+    The old environment is kept aside until the new one is ready and is put back if anything fails.
+    """
+    if not is_venv(env.path):
+        raise ValueError(f"{env.path} is not a virtual environment")
+    ctx.log(f"Reading packages of {env.name}")
+    requirements = requirements_of(env)
+    system_site = read_pyvenv_cfg(env.path).get("include-system-site-packages", "").lower() == "true"
+    backup = env.path.with_name(f".{env.path.name}.rebuild-{os.getpid()}")
+    if backup.exists():
+        remove_tree(backup)
+    env.path.rename(backup)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            file = None
+            if requirements:
+                file = Path(tmp) / "requirements.txt"
+                file.write_text(requirements, encoding="utf-8")
+            new = create_at(env.path, base_python, system_site, ctx=ctx, packages_file=file)
+    except BaseException:
+        if env.path.exists():
+            remove_tree(env.path)
+        backup.rename(env.path)
+        ctx.log(f"Restored the previous {env.name}")
+        raise
+    remove_tree(backup)
+    return new
 
 
 def export(env: VirtualEnv, path: Path) -> None:
