@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import time
@@ -20,7 +21,13 @@ PYTHON = "Python"
 APP_CACHE = "Download cache"
 PIP_CACHE = "pip cache"
 UV_CACHE = "uv cache"
+ARCHIVE = "Python download"
 CACHES = (APP_CACHE, PIP_CACHE, UV_CACHE)
+DELETABLE = (ENV, PYTHON, ARCHIVE)
+INSTALLED = "installed"
+
+# A python-build-standalone archive downloaded into the app cache.
+ARCHIVE_NAME = re.compile(r"^cpython-(?P<version>[^+]+)\+\d+-.+?(?P<ft>-freethreaded)?-install_only\.tar\.gz$")
 
 # Small files in the app cache that are cheaper to keep than to rebuild.
 KEEP = {"pypi-names.txt", "health.json"}
@@ -35,6 +42,7 @@ class Usage:
     payload: object = None  # the VirtualEnv or Interpreter behind an ENV or PYTHON row
     note: str = ""  # why an environment is stale
     stale: bool = False  # broken, or unchanged for longer than the ``stale_days`` setting
+    modified: float = 0.0  # when a downloaded archive was last written
 
     @property
     def cleanable(self) -> bool:
@@ -131,8 +139,50 @@ def uv_cache_dir() -> Optional[Path]:
     return default if uv or default.exists() else None
 
 
+def archive_key(name: str) -> Optional[str]:
+    """The installation folder an archive file name installs (``cpython-3.12.4``), or None."""
+    m = ARCHIVE_NAME.match(name)
+    return f"cpython-{m['version']}{'t' if m['ft'] else ''}" if m else None
+
+
+def archives(now: Optional[float] = None) -> list[Usage]:
+    """The Python archives in the download cache; the note says whether each is installed or its age."""
+    folder, now = paths.cache_dir(), now or time.time()
+    try:
+        installed = python_versions.installed_keys()
+    except OSError:
+        installed = set()
+    result = []
+    for entry in sorted(folder.glob("cpython-*.tar.gz")):
+        key = archive_key(entry.name)
+        try:
+            stat = entry.stat()
+        except OSError:
+            continue
+        if key is None or not entry.is_file():
+            continue
+        note = INSTALLED if key in installed else f"downloaded {_age(now - stat.st_mtime)} ago"
+        result.append(Usage(ARCHIVE, entry.name, entry, stat.st_size, key, note, modified=stat.st_mtime))
+    return result
+
+
+def old_archives(items: list[Usage], days: float, now: Optional[float] = None) -> list[Usage]:
+    """Archives whose Python is installed or that were downloaded at least ``days`` days ago."""
+    limit = (now or time.time()) - days * 86400
+    return [u for u in items if u.kind == ARCHIVE and (u.note == INSTALLED or u.modified <= limit)]
+
+
+def delete_archive(usage: Usage, ctx: TaskContext = NULL) -> None:
+    if usage.kind != ARCHIVE or usage.path.parent != paths.cache_dir():
+        raise ValueError(f"{usage.name} is not a downloaded Python archive")
+    ctx.log(f"Deleting {usage.path}")
+    usage.path.unlink(missing_ok=True)
+
+
 def scan(ctx: TaskContext = NULL) -> list[Usage]:
-    """Every environment, managed Python and cache with its size, largest first."""
+    """Every environment, managed Python, cache and downloaded Python archive with its size, largest first.
+
+    The download cache's size leaves out the archives, which have rows of their own."""
     items = [(ENV, e.name, e.path, e) for e in venvs.list_envs()]
     items += [(PYTHON, i.name, paths.pythons_dir() / i.name, i) for i in python_versions.list_installed()]
     items.append((APP_CACHE, "Python Manager downloads", paths.cache_dir(), None))
@@ -148,6 +198,10 @@ def scan(ctx: TaskContext = NULL) -> list[Usage]:
             ctx.progress(done, len(items))
             note, stale = env_status(payload) if kind == ENV else ("", False)
             result.append(Usage(kind, name, path, size, payload, note, stale))
+    downloads = archives()
+    in_archives = sum(u.size for u in downloads)
+    result = [Usage(u.kind, u.name, u.path, max(0, u.size - in_archives)) if u.kind == APP_CACHE else u
+              for u in result] + downloads
     return sorted(result, key=lambda u: u.size, reverse=True)
 
 

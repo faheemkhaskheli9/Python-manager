@@ -24,6 +24,7 @@ DEFAULTS: dict[str, Any] = {
     "default_python": "",  # interpreter preselected for new environments; empty: the first listed
     "envs_location": "",  # parent folder for new environments; empty: the app's envs folder
     "stale_days": 180,  # Disk Usage flags environments unchanged for longer
+    "download_days": 30,  # Disk Usage's "Select old downloads" age, last used
     "theme": "system",  # system, light or dark
     "index_url": "",  # package index used instead of PyPI; empty: pip's and uv's own setting
     "extra_index_urls": "",  # further indexes, separated by spaces
