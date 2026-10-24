@@ -8,8 +8,10 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   environments on the old one can be rebuilt on the new one right away. A *Support* column shows
   which Pythons and environments are past end of life or will be within six months.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
-  for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
-  check for updates and export the environment. A *Size* column shows the disk space of each
+  for any interpreter or virtual environment. Install from a wheel or sdist, or from a
+  `requirements.txt`, `pyproject.toml` (with chosen extras and dependency groups) or `pylock.toml`
+  after a preview of what is missing, at the wrong version or already satisfied; check for updates
+  and export the environment. A *Size* column shows the disk space of each
   package. Package names autocomplete from the full PyPI list.
 - **Compare and find** – *Compare…* shows two environments' packages side by side (different
   version, only on one side) and installs the left side's versions on the right in one click.
@@ -134,7 +136,7 @@ or not declared; `licenses` exits with 1 when a package is in a `--fail-on` cate
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |
 | Virtual environments | `uv venv` when uv is available, otherwise standard library `venv`. |
-| Projects | Requirements are read from `requirements.txt` (following `-r` includes) or `pyproject.toml` and compared with the environment's installed metadata; markers are evaluated for the environment's Python. |
+| Projects | Requirements are read from `requirements.txt` (following `-r` includes), `pyproject.toml` or `pylock.toml` and compared with the environment's installed metadata; markers are evaluated for the environment's Python. |
 | Scheduled checks | `pip list --outdated` plus the security check for each environment and app-installed Python, at most once a day; results are cached in `cache/health.json`. |
 | Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
 | Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. The SBOM (CycloneDX 1.6) adds licences from installed metadata and keeps packages not on PyPI, without hashes. |

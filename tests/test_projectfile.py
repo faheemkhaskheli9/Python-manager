@@ -101,3 +101,40 @@ def test_install_file_dispatch(monkeypatch, tmp_path):
     projectfile.install_file(Path(sys.executable), req)
     projectfile.install_file(Path(sys.executable), empty)
     assert calls == [("install", ["a"]), ("req", "requirements.txt")]
+
+
+PYLOCK = '''lock-version = "1.0"
+created-by = "python-manager"
+
+[[packages]]
+name = "attrs"
+version = "24.2.0"
+index = "https://pypi.org/simple"
+wheels = [
+    {name = "attrs-24.2.0-py3-none-any.whl", hashes = {sha256 = "aa"}},
+]
+
+[[packages]]
+name = "colorama"
+version = "0.4.6"
+marker = "sys_platform == \\"win32\\""
+
+[packages.sdist]
+name = "colorama-0.4.6.tar.gz"
+'''
+
+
+def test_pylock_requirements(monkeypatch, tmp_path):
+    lock = tmp_path / "pylock.toml"
+    lock.write_text(PYLOCK, encoding="utf-8")
+    expected = ["attrs==24.2.0", 'colorama==0.4.6; sys_platform == "win32"']
+    assert projectfile.pylock_requirements(lock) == expected
+    assert [e.get("name") for e in projectfile._pylock_fallback(PYLOCK)] == ["attrs", "colorama"]
+    assert projectfile._pylock_fallback(PYLOCK)[1]["marker"] == 'sys_platform == "win32"'
+    assert projectfile.is_pylock(lock) and projectfile.is_pylock(tmp_path / "pylock.dev.toml")
+    assert not projectfile.is_pylock(tmp_path / "pyproject.toml")
+
+    calls = []
+    monkeypatch.setattr(packages, "install", lambda py, specs, ctx: calls.append(list(specs)))
+    projectfile.install_file(Path(sys.executable), lock)
+    assert calls == [expected]

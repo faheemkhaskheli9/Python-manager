@@ -10,6 +10,11 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Packages page: *Install from file…* also takes a `pyproject.toml` (choose its extras and dependency
+  groups) or `pylock.toml`, and before installing from any of these or a `requirements.txt` shows
+  which packages are missing, at the wrong version or already satisfied; by default only the
+  missing and wrong ones are installed. New environments can also be created from a `pylock.toml`.
+  ([#24])
 - Disk usage: each downloaded Python archive is listed with whether it is installed or how old it
   is; *Select old downloads…* selects those installed or older than a chosen number of days, and
   *Delete* removes them. ([#22])
@@ -187,6 +192,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#20]: https://github.com/faheemkhaskheli9/python-manager/pull/20
 [#21]: https://github.com/faheemkhaskheli9/python-manager/pull/21
 [#22]: https://github.com/faheemkhaskheli9/python-manager/pull/22
+[#24]: https://github.com/faheemkhaskheli9/python-manager/pull/24
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

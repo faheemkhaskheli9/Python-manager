@@ -197,3 +197,26 @@ def test_install_python_and_env(tmp_path, monkeypatch):
     monkeypatch.setattr(python_versions, "find_executable", lambda root: Path(sys.executable))
     projects.install_python_and_env(project, remote)
     assert calls == [remote]
+
+
+def test_install_source(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(packages, "install", lambda py, specs, ctx: calls.append(("install", list(specs))))
+    monkeypatch.setattr(packages, "install_requirements", lambda py, f, ctx: calls.append(("req", f.name)))
+    req = tmp_path / "requirements.txt"
+    req.write_text("attrs\nclick>=8\n")
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text('[project]\nname = "app"\ndependencies = ["rich"]\n'
+                    '[project.optional-dependencies]\ncli = ["click"]\n')
+    lock = tmp_path / "pylock.toml"
+    lock.write_text('lock-version = "1.0"\n[[packages]]\nname = "attrs"\nversion = "24.2.0"\n')
+    python = Path(sys.executable)
+
+    projects.install_source(python, req)
+    projects.install_source(python, req, ["click>=8"])
+    projects.install_source(python, projects.Source(toml, extras=("cli",)))
+    projects.install_source(python, lock)
+    projects.install_source(python, toml, [])
+    assert calls == [("req", "requirements.txt"), ("install", ["click>=8"]), ("install", ["rich", "click"]),
+                     ("install", ["attrs==24.2.0"])]
+    assert projects.read_requirements(lock) == ["attrs==24.2.0"]

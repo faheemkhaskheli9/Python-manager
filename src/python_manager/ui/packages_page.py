@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QCompleter,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -26,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import deps, favorites, history, licenses, packages, pypi_names, security, sizes
+from ..core import deps, favorites, history, licenses, packages, projects, pypi_names, security, sizes
 from ..core.disk import format_size
 from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
@@ -34,6 +35,7 @@ from .compare_dialog import CompareDialog
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
 from .history_dialog import HistoryDialog
+from .install_file_dialog import InstallFileDialog
 from .licenses_dialog import LicensesDialog
 from .security_dialog import SecurityDialog
 from .state import AppState
@@ -110,8 +112,9 @@ class PackagesPage(QWidget):
                                  button("Update all…", self.upgrade_all, "Choose which outdated packages to update"),
                                  button("Security check", self.security_check,
                                         "Look up known vulnerabilities in the OSV database")))
-        lay.addLayout(button_row(button("Install from file…", self.install_from_file,
-                                        "Install a wheel, source archive or requirements.txt"),
+        lay.addLayout(button_row(button("Install from file…", lambda: self.install_from_file(),
+                                        "Install a wheel or source archive, or the packages a "
+                                        "requirements.txt, pyproject.toml or pylock.toml lists"),
                                  button("Export…", self.export_requirements,
                                         "Save as requirements.txt, pylock.toml or pyproject.toml"),
                                  button("Licenses…", self.show_licenses,
@@ -494,17 +497,26 @@ class PackagesPage(QWidget):
     def ensure_pip(self) -> None:
         self._run("Installing pip", packages.ensure_pip)
 
-    def install_from_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Install from file", "",
-            "Packages and requirements (*.whl *.tar.gz *.zip *.txt);;All files (*)")
+    def install_from_file(self, path: str = "") -> None:
         if not path:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Install from file", "",
+                "Packages and requirements (*.whl *.tar.gz *.zip *.txt *.toml);;All files (*)")
+        interp = self.python
+        if not path or interp is None:
             return
         file = Path(path)
-        if file.suffix == ".txt":
-            self._run(f"Installing {file.name}", lambda py, ctx: packages.install_requirements(py, file, ctx))
-        else:
+        if file.suffix not in (".txt", ".toml"):
             self._run(f"Installing {file.name}", lambda py, ctx: packages.install(py, [str(file)], ctx))
+            return
+        if self._refuse_read_only():
+            return
+        dialog = InstallFileDialog(interp.executable, file, self.tasks, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        source, only = dialog.source, dialog.only
+        self._run(f"Installing from {source.label}",
+                  lambda py, ctx: projects.install_source(py, source, only, ctx))
 
     def export_requirements(self) -> None:
         interp = self.python
