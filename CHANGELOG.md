@@ -10,6 +10,10 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Package index: *File → Settings → Package index* sets an index URL (a private index or mirror),
+  extra indexes and trusted hosts for every pip, uv and pipx command. ([#10])
+- Python updates: the Pythons page shows when an installed Python has a newer patch release and
+  *Install update* installs it, listing the environments still on the old one. ([#10])
 - License report: *Licenses…* on the Packages page lists each package's licence (from
   `License-Expression`, classifiers or `License`) and its category (permissive, weak copyleft,
   copyleft, public domain, other, unknown); filter it and save it as CSV, Markdown or JSON. ([#9])
@@ -138,3 +142,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
+[#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10

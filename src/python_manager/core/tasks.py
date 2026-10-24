@@ -8,6 +8,8 @@ import sys
 import threading
 from typing import Callable, Optional, Sequence
 
+from . import indexes
+
 
 class Cancelled(Exception):
     """Raised when the user cancels an operation."""
@@ -60,6 +62,10 @@ NULL = TaskContext()
 _CREATE_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
 
 
+def _env() -> dict[str, str]:
+    return dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1", **indexes.env())
+
+
 def run(
     cmd: Sequence[str],
     ctx: TaskContext = NULL,
@@ -70,14 +76,13 @@ def run(
     """Run a command, streaming its output to ``ctx.log``. Returns the combined output."""
     if echo:
         ctx.log("$ " + " ".join(map(str, cmd)))
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1")
     proc = subprocess.Popen(
         [str(c) for c in cmd],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
         cwd=cwd,
-        env=env,
+        env=_env(),
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -120,5 +125,5 @@ def capture(cmd: Sequence[str], timeout: float = 30) -> subprocess.CompletedProc
         timeout=timeout,
         stdin=subprocess.DEVNULL,
         creationflags=_CREATE_FLAGS,
-        env=dict(os.environ, PYTHONIOENCODING="utf-8", PIP_DISABLE_PIP_VERSION_CHECK="1"),
+        env=_env(),
     )

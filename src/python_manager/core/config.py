@@ -25,6 +25,9 @@ DEFAULTS: dict[str, Any] = {
     "envs_location": "",  # parent folder for new environments; empty: the app's envs folder
     "stale_days": 180,  # Disk Usage flags environments unchanged for longer
     "theme": "system",  # system, light or dark
+    "index_url": "",  # package index used instead of PyPI; empty: pip's and uv's own setting
+    "extra_index_urls": "",  # further indexes, separated by spaces
+    "trusted_hosts": "",  # hosts allowed over plain HTTP or with an untrusted certificate
 }
 
 _lock = threading.Lock()

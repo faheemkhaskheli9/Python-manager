@@ -15,11 +15,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QSpinBox,
     QVBoxLayout,
 )
 
-from ..core import config, paths
+from ..core import config, indexes, paths
 from . import theme
 from .state import AppState
 from .widgets import button
@@ -80,6 +81,21 @@ class SettingsDialog(QDialog):
         clay.addRow(self.security)
         clay.addRow(self.notify)
 
+        self.index_url = QLineEdit(config.get("index_url") or "", placeholderText="https://pypi.org/simple")
+        self.index_url.setToolTip("Used instead of PyPI by pip, uv and pipx. Empty: their own setting.")
+        self.extra_indexes = QLineEdit(config.get("extra_index_urls") or "",
+                                       placeholderText="Further index URLs, separated by spaces")
+        self.trusted_hosts = QLineEdit(config.get("trusted_hosts") or "",
+                                       placeholderText="Hosts served over HTTP or with a self-signed certificate")
+        index_note = QLabel("Credentials in a URL are saved in the settings file as plain text.")
+        index_note.setEnabled(False)
+        index = QGroupBox("Package index")
+        ilay = QFormLayout(index)
+        ilay.addRow("Index URL:", self.index_url)
+        ilay.addRow("Extra indexes:", self.extra_indexes)
+        ilay.addRow("Trusted hosts:", self.trusted_hosts)
+        ilay.addRow(index_note)
+
         self.stale_days = QSpinBox(minimum=7, maximum=3650, suffix=" days")
         self.stale_days.setValue(int(config.get("stale_days") or 180))
         disk = QGroupBox("Disk usage")
@@ -98,9 +114,19 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        for box in (appearance, general, envs, checks, disk):
+        for box in (appearance, general, index, envs, checks, disk):
             layout.addWidget(box)
         layout.addWidget(buttons)
+
+    def accept(self) -> None:
+        urls = indexes.split(self.index_url.text()) + indexes.split(self.extra_indexes.text())
+        bad = [url for url in urls if indexes.invalid_url(url)]
+        if len(indexes.split(self.index_url.text())) > 1:
+            bad.insert(0, "Index URL takes one URL; put the others under Extra indexes")
+        if bad:
+            QMessageBox.warning(self, "Package index", "Not a valid http(s) URL:\n  " + "\n  ".join(bad))
+            return
+        super().accept()
 
     def _browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Location for new environments",
@@ -120,5 +146,8 @@ class SettingsDialog(QDialog):
             notify=self.notify.isChecked(),
             stale_days=self.stale_days.value(),
             theme=self.theme.currentData(),
+            index_url=self.index_url.text().strip(),
+            extra_index_urls=" ".join(indexes.split(self.extra_indexes.text())),
+            trusted_hosts=" ".join(indexes.split(self.trusted_hosts.text())),
         )
         config.save(data)
