@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, Qt
-from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from ..core import config, disk, python_versions, venvs
 from ..core.disk import Usage
@@ -25,15 +25,17 @@ class DiskPage(QWidget):
         self.overlay = loading_overlay(self.table)
         self.total = QLabel("Sizes are calculated when this page is opened.")
         self.clean_btn = button("Clean", self.clean, "Empty the selected cache")
-        self.delete_btn = button("Delete", self.delete, "Delete the selected environments or Pythons")
+        self.delete_btn = button("Delete", self.delete, "Delete the selected environments, Pythons or downloads")
         self.stale_btn = button("Select stale", self.select_stale,
                                 "Select environments whose Python is gone or that have not changed for a long time")
+        self.downloads_btn = button("Select old downloads…", lambda: self.select_old_downloads(),
+                                    "Select downloaded Python archives that are installed or older than a chosen age")
         self.folder_btn = button("Open folder", lambda: self._with_selected(lambda u: open_folder(u.path)))
         layout = QVBoxLayout(self)
         layout.addLayout(button_row(button("Refresh", self.scan)))
         layout.addWidget(self.table)
         layout.addWidget(self.total)
-        layout.addLayout(button_row(self.clean_btn, self.delete_btn, self.stale_btn, self.folder_btn))
+        layout.addLayout(button_row(self.clean_btn, self.delete_btn, self.stale_btn, self.downloads_btn, self.folder_btn))
         self._update_buttons()
 
     def showEvent(self, event) -> None:
@@ -52,11 +54,14 @@ class DiskPage(QWidget):
                                     for u in items])
             for row in range(self.table.rowCount()):
                 note = self.table.item(row, 3)
-                if note.text():
+                if note.text() and self.table.item(row, 0).text() != disk.ARCHIVE:
                     theme.paint(note, "error" if note.text() == disk.BROKEN else "warning")
             caches = sum(u.size for u in items if u.cleanable)
             stale = [u for u in items if u.stale]
+            downloads = sum(u.size for u in items if u.kind == disk.ARCHIVE)
             text = f"Total: {disk.format_size(sum(u.size for u in items))} · caches: {disk.format_size(caches)}"
+            if downloads:
+                text += f" · Python downloads: {disk.format_size(downloads)}"
             if stale:
                 text += f" · {len(stale)} stale environment{'s' * (len(stale) != 1)}: " \
                         f"{disk.format_size(sum(u.size for u in stale))}"
@@ -83,7 +88,7 @@ class DiskPage(QWidget):
             fn(usage)
 
     def _deletable(self) -> list[Usage]:
-        return [u for u in self._selected_all() if u.kind in (disk.ENV, disk.PYTHON)]
+        return [u for u in self._selected_all() if u.kind in disk.DELETABLE]
 
     def _update_buttons(self) -> None:
         usage = self._selected()
@@ -91,15 +96,34 @@ class DiskPage(QWidget):
         self.delete_btn.setEnabled(bool(self._deletable()))
         self.folder_btn.setEnabled(usage is not None)
 
-    def select_stale(self) -> None:
+    def _select(self, wanted) -> int:
+        """Select the rows whose Usage ``wanted`` accepts; returns how many."""
         self.table.clearSelection()
         model, found = self.table.selectionModel(), 0
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole).stale:
+            if wanted(self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)):
                 found += 1
                 model.select(self.table.model().index(row, 0),
                              QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
-        if not found:
+        return found
+
+    def select_old_downloads(self, days: int | None = None) -> None:
+        if days is None:
+            days, ok = QInputDialog.getInt(
+                self, "Select old downloads",
+                "Select Python downloads that are installed or older than this many days:",
+                int(config.get("download_days") or 30), 0, 3650)
+            if not ok:
+                return
+            config.set("download_days", days)
+        items = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) for row in range(self.table.rowCount())]
+        old = {id(u) for u in disk.old_archives(items, days)}
+        if not self._select(lambda u: id(u) in old):
+            QMessageBox.information(self, "Select old downloads",
+                                    f"No downloaded Python is installed or older than {days} days.")
+
+    def select_stale(self) -> None:
+        if not self._select(lambda u: u.stale):
             days = int(config.get("stale_days") or 180)
             QMessageBox.information(self, "Select stale", "No environment is broken or unchanged for "
                                                           f"{days} days (change the limit in Settings).")
@@ -133,6 +157,8 @@ class DiskPage(QWidget):
                 ctx.progress(done, len(items))
                 if usage.kind == disk.ENV:
                     venvs.delete(usage.payload, ctx)
+                elif usage.kind == disk.ARCHIVE:
+                    disk.delete_archive(usage, ctx)
                 else:
                     python_versions.uninstall(usage.payload, ctx)
 

@@ -10,6 +10,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Disk usage: each downloaded Python archive is listed with whether it is installed or how old it
+  is; *Select old downloads…* selects those installed or older than a chosen number of days, and
+  *Delete* removes them. ([#22])
 - SBOM export: the Export dialog and `python-manager-cli export --format sbom` save an environment
   as a CycloneDX 1.6 JSON SBOM with each package's version, purl, licence, dependencies and the
   hashes of its PyPI files. ([#21])
@@ -183,6 +186,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#19]: https://github.com/faheemkhaskheli9/python-manager/pull/19
 [#20]: https://github.com/faheemkhaskheli9/python-manager/pull/20
 [#21]: https://github.com/faheemkhaskheli9/python-manager/pull/21
+[#22]: https://github.com/faheemkhaskheli9/python-manager/pull/22
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

@@ -68,6 +68,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Disk usage** – size of every environment, installed Python, the download cache and the pip and
   uv caches; clean a cache or delete environments from the same page. Environments whose Python is
   gone or that have not changed for a long time are flagged, and *Select stale* selects them all.
+  Each downloaded Python archive has its own row; *Select old downloads…* selects those already
+  installed or older than a chosen number of days.
 - **Settings** – *File → Settings*: light, dark or system theme, uv on or off, a private package
   index or mirror (with extra indexes and trusted hosts), the default Python and folder for new
   environments, how often environments are checked, whether the check includes the security

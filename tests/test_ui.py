@@ -281,3 +281,26 @@ def test_support_columns(app, monkeypatch):
     envs_page._render()
     assert envs_page.table.item(0, 2).text().startswith("End of life")
     assert envs_page.table.item(0, 1).text() == "3.8.20"
+
+
+def test_disk_page_selects_and_deletes_old_downloads(app):
+    from python_manager.core import paths
+    from python_manager.ui.main_window import MainWindow
+
+    archive = paths.cache_dir() / "cpython-3.12.4+20240726-x86_64-unknown-linux-gnu-install_only.tar.gz"
+    archive.write_bytes(b"x" * 40)
+    old = time.time() - 60 * 86400
+    os.utime(archive, (old, old))
+
+    window = MainWindow()
+    page = window.disk
+    wait_until(app, lambda: not window.state.loading)
+    page.scan()
+    wait_until(app, lambda: page.table.rowCount() and not window.tasks.busy)
+    page.select_old_downloads(30)
+    assert [u.path for u in page._deletable()] == [archive]
+    page.delete()
+    rows = lambda: [page.table.item(r, 0).text() for r in range(page.table.rowCount())]  # noqa: E731
+    wait_until(app, lambda: not archive.exists() and "Python download" not in rows() and not window.tasks.busy)
+    QThreadPool.globalInstance().waitForDone(30000)
+    window.close()
