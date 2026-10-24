@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt
 from ..core import config, paths, python_versions
 from ..core.interpreters import MANAGED, Interpreter
 from ..core.python_versions import RemotePython
+from . import theme
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
@@ -31,18 +32,21 @@ class PythonsPage(QWidget):
         super().__init__()
         self.state, self.tasks = state, tasks
         self._available: list[RemotePython] = []
+        self._updates: dict[str, RemotePython] = {}
         self._loaded_once = False
 
         # Installed interpreters
-        self.installed = make_table(["Name", "Version", "Type", "Location"])
+        self.installed = make_table(["Name", "Version", "Type", "Update", "Location"])
         self.installed.itemSelectionChanged.connect(self._update_buttons)
         self.installed_overlay = loading_overlay(self.installed)
         self.uninstall_btn = button("Uninstall", self.uninstall)
         self.folder_btn = button("Open folder", self.open_selected_folder)
+        self.update_btn = button("Install update", self.install_update,
+                                 "Install the newest patch release next to this Python")
         installed_box = QGroupBox("Installed Pythons")
         lay = QVBoxLayout(installed_box)
         lay.addWidget(self.installed)
-        lay.addLayout(button_row(self.uninstall_btn, self.folder_btn,
+        lay.addLayout(button_row(self.update_btn, self.uninstall_btn, self.folder_btn,
                                  button("Rescan system", lambda: self.state.refresh(include_system=True))))
 
         # Downloadable versions
@@ -101,17 +105,50 @@ class PythonsPage(QWidget):
     # Installed -------------------------------------------------------------
 
     def _render_installed(self) -> None:
-        rows = [(i, (i.name, i.version, "Managed" if i.kind == MANAGED else "System", str(i.executable)))
-                for i in self.state.interpreters(include_envs=False)]
+        interpreters = self.state.interpreters(include_envs=False)
+        self._updates = python_versions.updates(interpreters, self._available)
+        rows = []
+        for i in interpreters:
+            update = self._updates.get(i.name)
+            rows.append((i, (i.name, i.version, "Managed" if i.kind == MANAGED else "System",
+                             update.version if update else "", str(i.executable))))
         fill_table(self.installed, rows)
+        for row in range(self.installed.rowCount()):
+            cell = self.installed.item(row, 3)
+            if cell.text():
+                theme.paint(cell, "warning")
         self._render_available()
+
+    def _dependents(self, interp: Interpreter) -> list[str]:
+        root = os.path.realpath(paths.pythons_dir() / interp.name)
+        return [e.name for e in self.state.envs if e.base and os.path.realpath(e.base).startswith(root)]
+
+    def install_update(self) -> None:
+        interp: Interpreter = selected_payload(self.installed)
+        update = self._updates.get(interp.name) if interp else None
+        if not update or update.key in python_versions.installed_keys():
+            return
+
+        def done(_) -> None:
+            self.state.refresh()
+            dependents = self._dependents(interp)
+            message = f"Python {update.version} is installed next to {interp.version}."
+            if dependents:
+                message += ("\n\nThese environments still use Python " + interp.version + ":\n  "
+                            + "\n  ".join(dependents)
+                            + "\n\nClone them onto the new Python on the Virtual Environments page, "
+                              "then uninstall the old one.")
+            else:
+                message += "\n\nNo environment uses the old one; it can be uninstalled."
+            QMessageBox.information(self, "Python updated", message)
+
+        self.tasks.run(f"Installing Python {update.version}", lambda ctx: python_versions.install(update, ctx), done)
 
     def uninstall(self) -> None:
         interp: Interpreter = selected_payload(self.installed)
         if not interp or interp.kind != MANAGED:
             return
-        root = paths.pythons_dir() / interp.name
-        dependents = [e.name for e in self.state.envs if e.base and os.path.realpath(e.base).startswith(os.path.realpath(root))]
+        dependents = self._dependents(interp)
         message = f"Uninstall Python {interp.version} ({interp.name})?"
         if dependents:
             message += "\n\nThese virtual environments use it and will stop working:\n  " + "\n  ".join(dependents)
@@ -146,7 +183,7 @@ class PythonsPage(QWidget):
         self._available = items
         self.info.setText(f"{len(items)} builds for {python_versions.target_triple()} "
                           f"from python-build-standalone. Installs go to {paths.pythons_dir()}")
-        self._render_available()
+        self._render_installed()
 
     def _render_available(self) -> None:
         installed = python_versions.installed_keys()
@@ -188,6 +225,8 @@ class PythonsPage(QWidget):
         interp = selected_payload(self.installed)
         self.uninstall_btn.setEnabled(bool(interp and interp.kind == MANAGED))
         self.folder_btn.setEnabled(interp is not None)
+        update = self._updates.get(interp.name) if interp else None
+        self.update_btn.setEnabled(bool(update) and update.key not in python_versions.installed_keys())
         item = selected_payload(self.available)
         installed = bool(item and item.key in python_versions.installed_keys())
         self.install_btn.setEnabled(bool(item) and not installed)

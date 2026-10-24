@@ -245,5 +245,30 @@ def uninstall(interpreter: Interpreter, ctx: TaskContext = NULL) -> None:
     remove_tree(root)
 
 
+def updates(installed: list[Interpreter], available: list[RemotePython]) -> dict[str, RemotePython]:
+    """Newer patch releases of the managed Pythons, by installation folder name.
+
+    Only the same minor version and variant counts; pre-releases only update pre-releases.
+    """
+    result = {}
+    for interp in installed:
+        if interp.kind != MANAGED:
+            continue
+        current = version_key(interp.version)
+        freethreaded = interp.name.endswith("t")
+        prerelease = bool(re.search(r"(a|b|rc)\d+$", interp.version))
+        newest = None
+        for remote in available:
+            key = version_key(remote.version)
+            if (remote.freethreaded != freethreaded or key[:2] != current[:2] or key <= current
+                    or (remote.prerelease and not prerelease)):
+                continue
+            if newest is None or key > version_key(newest.version):
+                newest = remote
+        if newest is not None:
+            result[interp.name] = newest
+    return result
+
+
 def installed_keys() -> set[str]:
     return {p.name for p in paths.pythons_dir().iterdir() if (p / MARKER).is_file()}

@@ -132,3 +132,26 @@ def test_install_rejects_bad_checksum(tmp_path):
         python_versions.install(remote)
     assert python_versions.list_installed() == []
     assert not python_versions.archive_path(remote).exists()
+
+
+def _remote(version, freethreaded=False):
+    return RemotePython(version, "20250101", freethreaded, f"{version}.tar.gz", "https://example/x")
+
+
+def test_updates_newest_patch_of_same_minor_and_variant():
+    from python_manager.core.interpreters import SYSTEM, Interpreter
+
+    installed = [
+        Interpreter(paths.pythons_dir() / "a", "3.12.4", MANAGED, "cpython-3.12.4"),
+        Interpreter(paths.pythons_dir() / "b", "3.13.1", MANAGED, "cpython-3.13.1t"),
+        Interpreter(paths.pythons_dir() / "c", "3.14.0rc2", MANAGED, "cpython-3.14.0rc2"),
+        Interpreter(paths.pythons_dir() / "d", "3.11.2", SYSTEM, "python3.11"),
+        Interpreter(paths.pythons_dir() / "e", "3.10.16", MANAGED, "cpython-3.10.16"),
+    ]
+    available = [
+        _remote("3.13.0"), _remote("3.12.9"), _remote("3.12.11"), _remote("3.12.12rc1"),
+        _remote("3.13.3"), _remote("3.13.2", freethreaded=True), _remote("3.14.0"),
+        _remote("3.11.9"), _remote("3.10.16"),
+    ]
+    found = {name: r.version for name, r in python_versions.updates(installed, available).items()}
+    assert found == {"cpython-3.12.4": "3.12.11", "cpython-3.13.1t": "3.13.2", "cpython-3.14.0rc2": "3.14.0"}

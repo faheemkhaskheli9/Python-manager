@@ -4,6 +4,7 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 
 - **Python versions** – browse, download, install and uninstall any CPython version
   (including pre-releases and free-threaded builds). Existing system Pythons are detected too.
+  Installed Pythons with a newer patch release are flagged and updated in one click.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
   check for updates and export the environment. Package names autocomplete from the full PyPI list.
@@ -51,7 +52,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Disk usage** – size of every environment, installed Python, the download cache and the pip and
   uv caches; clean a cache or delete environments from the same page. Environments whose Python is
   gone or that have not changed for a long time are flagged, and *Select stale* selects them all.
-- **Settings** – *File → Settings*: light, dark or system theme, uv on or off, the default Python and folder for new
+- **Settings** – *File → Settings*: light, dark or system theme, uv on or off, a private package
+  index or mirror (with extra indexes and trusted hosts), the default Python and folder for new
   environments, how often environments are checked, whether the check includes the security
   lookup and shows notifications, and when an environment counts as stale.
 - **Log file** – everything shown in the Output panel, plus errors, is written to a rotating log
@@ -82,6 +84,8 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 |---|---|
 | Python downloads | Relocatable CPython builds from [python-build-standalone](https://github.com/astral-sh/python-build-standalone), verified with SHA-256 and extracted into the app data folder. Uninstall removes that folder. No admin rights needed. |
 | Packages | `uv pip … --python <interpreter>` when uv is available, otherwise the interpreter's own `pip`; version details come from the PyPI JSON API. Downloads always use pip. |
+| Package index | The index settings are passed to every pip, uv and pipx command as `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST` and their `UV_*` equivalents. Version details and autocomplete still come from PyPI. |
+| Python updates | An installed Python is flagged when the build list has a newer patch release of the same minor version and variant. The update is installed next to it; environments keep using the old one until they are cloned onto the new one. |
 | Name autocomplete | PyPI's JSON simple index (`https://pypi.org/simple/`), cached in the app data folder and refreshed weekly. |
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
 | Dependencies | Read from installed package metadata (`importlib.metadata`) inside the target interpreter. |

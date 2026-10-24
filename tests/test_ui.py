@@ -91,3 +91,50 @@ def test_licenses_dialog(app, tmp_path, monkeypatch):
     rows = list(csv.reader((tmp_path / "report.csv").open(encoding="utf-8")))
     assert [r[0] for r in rows] == ["Package", "a", "b", "c"]
     assert app.shown_messages[-1][0] == "information"
+
+
+def test_settings_package_index(app):
+    from python_manager.core import indexes
+    from python_manager.ui.settings_dialog import SettingsDialog
+    from python_manager.ui.state import AppState
+    from python_manager.ui.tasks import TaskManager
+
+    window = QtWidgets.QWidget()
+    dialog = SettingsDialog(AppState(TaskManager(window)))
+    dialog.index_url.setText("not a url")
+    dialog.accept()
+    assert app.shown_messages[-1][0] == "warning" and dialog.result() != dialog.DialogCode.Accepted
+    dialog.index_url.setText("https://mirror.example/simple")
+    dialog.extra_indexes.setText("https://a.example/simple, https://b.example/simple")
+    dialog.trusted_hosts.setText("a.example")
+    dialog.accept()
+    assert dialog.result() == dialog.DialogCode.Accepted
+    dialog.save()
+    assert config.get("extra_index_urls") == "https://a.example/simple https://b.example/simple"
+    assert indexes.env()["PIP_INDEX_URL"] == "https://mirror.example/simple"
+
+
+def test_pythons_page_offers_patch_update(app, monkeypatch):
+    from python_manager.core import python_versions
+    from python_manager.core.interpreters import MANAGED, Interpreter
+    from python_manager.core.python_versions import RemotePython
+    from python_manager.ui.pythons_page import PythonsPage
+    from python_manager.ui.state import AppState
+    from python_manager.ui.tasks import TaskManager
+
+    old = Interpreter(python_versions.paths.pythons_dir() / "bin" / "python3", "3.12.4", MANAGED, "cpython-3.12.4")
+    new = RemotePython("3.12.11", "20250101", False, "x.tar.gz", "https://example/x")
+    window = QtWidgets.QWidget()
+    tasks = TaskManager(window)
+    state = AppState(tasks)
+    monkeypatch.setattr(state, "interpreters", lambda include_envs=True: [old])
+    installs = []
+    monkeypatch.setattr(python_versions, "install", lambda remote, ctx: installs.append(remote))
+    page = PythonsPage(state, tasks)
+    page._set_available([new])
+    assert page.installed.item(0, 3).text() == "3.12.11"
+    page.installed.selectRow(0)
+    assert page.update_btn.isEnabled()
+    page.install_update()
+    wait_until(app, lambda: installs and app.shown_messages)
+    assert installs == [new] and app.shown_messages[-1][0] == "information"
