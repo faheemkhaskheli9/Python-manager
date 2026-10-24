@@ -15,7 +15,8 @@ def _log_unhandled(exc_type, exc, tb) -> None:
 def main() -> int:
     from PySide6.QtWidgets import QApplication
 
-    from .core import logs
+    from .core import config, logs
+    from .ui import theme
     from .ui.main_window import MainWindow
 
     logs.setup()
@@ -23,6 +24,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Python Manager")
     app.setOrganizationName("PythonManager")
+    theme.apply(config.get("theme"), app)
     window = MainWindow()
     window.show()
     return app.exec()

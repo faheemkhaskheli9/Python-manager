@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..core import config, health, logs, packages, paths
+from . import theme
 from .disk_page import DiskPage
 from .packages_page import PackagesPage
 from .projects_page import ProjectsPage
@@ -147,6 +148,8 @@ class MainWindow(QMainWindow):
             return
         dialog.save()
         after = config.load()
+        if after["theme"] != before["theme"]:
+            theme.apply(after["theme"])
         if after["use_uv"] != before["use_uv"]:
             self._use_uv_changed(after["use_uv"])
         if after["stale_days"] != before["stale_days"] and self.disk.scanned:

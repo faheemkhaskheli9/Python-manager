@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, Qt
-from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from ..core import config, disk, python_versions, venvs
 from ..core.disk import Usage
+from . import theme
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payloads
 
-BROKEN_COLOR = "#c62828"
-STALE_COLOR = "#ef6c00"
 
 
 class DiskPage(QWidget):
@@ -55,7 +53,7 @@ class DiskPage(QWidget):
             for row in range(self.table.rowCount()):
                 note = self.table.item(row, 3)
                 if note.text():
-                    note.setForeground(QBrush(QColor(BROKEN_COLOR if note.text() == disk.BROKEN else STALE_COLOR)))
+                    theme.paint(note, "error" if note.text() == disk.BROKEN else "warning")
             caches = sum(u.size for u in items if u.cleanable)
             stale = [u for u in items if u.stale]
             text = f"Total: {disk.format_size(sum(u.size for u in items))} · caches: {disk.format_size(caches)}"

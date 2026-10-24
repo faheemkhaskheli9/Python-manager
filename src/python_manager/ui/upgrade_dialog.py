@@ -6,18 +6,16 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..core import packages
 from ..core.packages import Upgrade, UpgradeResult
+from . import theme
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import LoadingOverlay, button, button_row, fill_table, make_table
 
 MAJOR = "major version"
-HELD_COLOR = "#9e9e9e"
-MAJOR_COLOR = "#ef6c00"
 
 
 class UpgradeDialog(QDialog):
@@ -49,9 +47,9 @@ class UpgradeDialog(QDialog):
             item = self.table.item(row, 0)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Unchecked if u.name in held else Qt.CheckState.Checked)
-            color = HELD_COLOR if u.name in held else MAJOR_COLOR if u.major else ""
+            color = "muted" if u.name in held else "warning" if u.major else ""
             if color:
-                self.table.item(row, 3).setForeground(QBrush(QColor(color)))
+                theme.paint(self.table.item(row, 3), color)
         self.table.itemChanged.connect(lambda _: self._update_count())
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)

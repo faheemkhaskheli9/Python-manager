@@ -33,9 +33,13 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   `uv.lock` and uv is installed). Compare against any `requirements*.txt`, or `pyproject.toml` with
   an extra, a dependency group (PEP 735) or all of them; installed packages the requirements do not
   list are shown too. The comparison refreshes when a requirements file or the environment changes.
+  The Python the project asks for (`.python-version`, `requires-python`) is shown, can be set, and is
+  preselected for a new environment; an environment on another Python is flagged.
 - **Tools** – command-line tools installed with `uv tool` or pipx in one list, with their commands,
   Python and the latest version on PyPI. Install a tool (optionally on a chosen Python), upgrade
   one or all, or uninstall it.
+- **Jupyter kernels** – add an environment to Jupyter in one click (ipykernel is installed when
+  missing) or remove it again; see every installed kernel and clean up those whose Python is gone.
 - **Conda environments** – conda, mamba and micromamba environments are listed read-only on the
   Virtual Environments page with their activation command; their packages can be viewed but are
   changed with conda.
@@ -45,7 +49,7 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Disk usage** – size of every environment, installed Python, the download cache and the pip and
   uv caches; clean a cache or delete environments from the same page. Environments whose Python is
   gone or that have not changed for a long time are flagged, and *Select stale* selects them all.
-- **Settings** – *File → Settings*: uv on or off, the default Python and folder for new
+- **Settings** – *File → Settings*: light, dark or system theme, uv on or off, the default Python and folder for new
   environments, how often environments are checked, whether the check includes the security
   lookup and shows notifications, and when an environment counts as stale.
 - **Log file** – everything shown in the Output panel, plus errors, is written to a rotating log
@@ -85,6 +89,7 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
 | Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. |
 | Tools | `uv tool list --show-paths` and `pipx list --json`; install, upgrade and uninstall run the same manager's commands. Latest versions come from the PyPI JSON API. |
+| Jupyter kernels | Kernel specs are read from Jupyter's user, `JUPYTER_PATH` and system data folders; adding one runs `python -m ipykernel install --user` in the environment, removing one deletes its folder. |
 | Conda | Found without running conda: `~/.conda/environments.txt`, `CONDA_PREFIX`, `CONDA_EXE`, `MAMBA_ROOT_PREFIX` and the usual install folders (`miniconda3`, `anaconda3`, `miniforge3`, …). The Python version is read from `conda-meta`. |
 | Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
@@ -104,7 +109,7 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, health, disk, tools, conda, logs
+          # lock, security, health, disk, tools, conda, kernels, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```

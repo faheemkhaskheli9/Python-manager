@@ -107,3 +107,53 @@ def test_compare_unlisted(tmp_path, monkeypatch):
     checks = projects.compare(["requests"], Path(sys.executable), unlisted=True)
     assert [(c.name, c.status) for c in checks] == [("requests", projects.OK), ("black", projects.UNLISTED)]
     assert len(projects.compare(["requests"], Path(sys.executable))) == 1
+
+
+def test_python_pin_and_requires_python(tmp_path):
+    project = projects.Project(tmp_path)
+    assert projects.python_pin(project) == "" and projects.requires_python(project) == ""
+    assert projects.python_problems(project, "3.8.1") == []
+    projects.set_python_pin(project, "3.12 ")
+    assert (tmp_path / ".python-version").read_text() == "3.12\n"
+    (tmp_path / ".python-version").write_text("# comment\n\n3.11  # pinned\n3.12\n")
+    assert projects.python_pin(project) == "3.11"
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nrequires-python = ">=3.10"\n')
+    assert projects.requires_python(project) == ">=3.10"
+    assert projects.python_problems(project, "3.11.4") == []
+    assert projects.python_problems(project, "3.9.0.final.0") == [".python-version asks for 3.11",
+                                                                  "requires-python is >=3.10"]
+    assert tmp_path / ".python-version" in project.watched_paths()
+    projects.set_python_pin(project, "")
+    assert not (tmp_path / ".python-version").exists()
+    projects.set_python_pin(project, "")  # already gone
+
+
+@pytest.mark.parametrize("pin, version, expected", [
+    ("3.12", "3.12.4", True), ("3.12", "3.13.0", False), ("3.12.4", "3.12.3", False),
+    ("cpython-3.12", "3.12.0", True), ("cpython@3.13", "3.12.9", False), ("3.13t", "3.13.1", True),
+    ("system", "3.8.0", True), ("3", "3.14.0", True), ("3.1", "3.12.0", False),
+])
+def test_pin_matches(pin, version, expected):
+    assert projects.pin_matches(pin, version) is expected
+
+
+def test_satisfies():
+    assert projects.satisfies(">=3.10,<4", "3.12.1")
+    assert not projects.satisfies(">=3.10", "3.9.18")
+    assert projects.satisfies("", "3.9")
+    assert projects.satisfies("not a specifier", "3.9")
+    assert projects.satisfies(">=3.13", "3.13.0rc1.candidate.1")
+
+
+def test_preferred_python(tmp_path):
+    project = projects.Project(tmp_path)
+    versions = ["3.11.9", "3.13.1", "3.12.7", "3.10.4"]
+    assert projects.preferred_python(project, versions, 3) == 3  # nothing asked for: the default
+    (tmp_path / ".python-version").write_text("3.12\n")
+    assert projects.preferred_python(project, versions, 0) == 2
+    (tmp_path / ".python-version").unlink()
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nrequires-python = ">=3.12"\n')
+    assert projects.preferred_python(project, versions, 0) == 1  # the newest that fits
+    assert projects.preferred_python(project, versions, 2) == 2  # the default fits
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nrequires-python = ">=3.20"\n')
+    assert projects.preferred_python(project, versions, 3) == 3  # none fits

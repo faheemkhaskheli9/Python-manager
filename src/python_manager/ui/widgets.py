@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Optional, Sequence
 
 from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, QUrl
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFontDatabase, QPainter, QPalette, QPen
+from PySide6.QtGui import QDesktopServices, QFontDatabase, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QWidget,
 )
+
+from . import theme
 
 
 def make_table(headers: Sequence[str], stretch: int = -1, multi: bool = False) -> QTableWidget:
@@ -75,11 +77,11 @@ def fill_table(table: QTableWidget, rows: Iterable[tuple[Any, Sequence[Any]]]) -
 
 
 def color_rows(table: QTableWidget, column: int, colors: dict[str, str]) -> None:
-    """Colour each row's ``column`` text by its value, e.g. {"Missing": "#c62828"}."""
+    """Colour each row's ``column`` text by its value with a theme colour, e.g. {"Missing": "error"}."""
     for row in range(table.rowCount()):
         item = table.item(row, column)
         if item and item.text() in colors:
-            item.setForeground(QBrush(QColor(colors[item.text()])))
+            theme.paint(item, colors[item.text()])
 
 
 def selected_payloads(table: QTableWidget) -> list[Any]:

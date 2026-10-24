@@ -10,6 +10,14 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Dark theme: *File → Settings → Theme* switches between light, dark and the system's colours;
+  status colours stay readable in both. ([#8])
+- Projects page: show the Python a project asks for in `.python-version` and `requires-python`,
+  warn when its environment does not match, set or remove `.python-version`, and preselect a
+  matching Python when creating the environment. ([#8])
+- Jupyter kernels: add or remove an environment's kernel from the Virtual Environments page
+  (ipykernel is installed when missing); a *Jupyter kernel* column shows which environments have
+  one, and *Jupyter kernels…* lists every kernel and removes those whose Python is gone. ([#8])
 - Tools page: list command-line tools installed with `uv tool` or pipx with their commands, Python
   and latest version; install (optionally on a chosen Python), upgrade, upgrade all and
   uninstall. ([#7])
@@ -120,3 +128,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf
+[#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
