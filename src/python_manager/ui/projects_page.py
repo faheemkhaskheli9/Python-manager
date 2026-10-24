@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
@@ -30,8 +31,8 @@ from .tasks import TaskManager
 from .upgrade_dialog import update_all
 from .widgets import button, button_row, color_rows, fill_table, loading_overlay, make_table, open_folder
 
-STATUS_COLORS = {projects.MISSING: "#c62828", projects.MISMATCH: "#ef6c00", projects.OK: "#2e7d32",
-                 projects.UNLISTED: "#757575"}
+STATUS_COLORS = {projects.MISSING: "error", projects.MISMATCH: "warning", projects.OK: "ok",
+                 projects.UNLISTED: "muted"}
 UV_SYNC = "uv.lock (uv sync)"
 
 
@@ -62,11 +63,18 @@ class ProjectsPage(QWidget):
         self.files = QLabel()
         self.env = QLabel()
         self.env.setWordWrap(True)
+        self.python = QLabel()
+        self.python.setWordWrap(True)
+        self.pin_btn = button("Set…", self.set_python, f"Write the Python version to {projects.PYTHON_VERSION}")
+        python_row = QHBoxLayout()
+        python_row.addWidget(self.python, 1)
+        python_row.addWidget(self.pin_btn)
         self.source = QComboBox()
         self.source.currentIndexChanged.connect(lambda _: self.check())
         form = QFormLayout()
         form.addRow("Folder:", self.path)
         form.addRow("Files:", self.files)
+        form.addRow("Python:", python_row)
         form.addRow("Environment:", self.env)
         form.addRow("Requirements:", self.source)
 
@@ -158,7 +166,7 @@ class ProjectsPage(QWidget):
         self.source.clear()
         self._watch(project)
         if project is None:
-            for label in (self.path, self.files, self.env):
+            for label in (self.path, self.files, self.env, self.python):
                 label.setText("—")
             self.source.blockSignals(False)
             self._update_buttons(None, None)
@@ -166,7 +174,12 @@ class ProjectsPage(QWidget):
         env = project.env()
         self.path.setText(str(project.path))
         self.files.setText(", ".join(project.files) or "none")
-        self.env.setText(f"{env.path.name} (Python {env.version})" if env else "none")
+        self.python.setText(self._python_text(project))
+        env_text = f"{env.path.name} (Python {env.version})" if env else "none"
+        problems = projects.python_problems(project, env.version) if env else []
+        if problems:
+            env_text += f" ⚠ {' and '.join(problems)}; recreate the environment to match"
+        self.env.setText(env_text)
         for source in project.sources():
             self.source.addItem(source.label, source)
         if projects.can_uv_sync(project):
@@ -178,7 +191,15 @@ class ProjectsPage(QWidget):
         self._update_buttons(project, env)
         self.check()
 
+    @staticmethod
+    def _python_text(project: Project) -> str:
+        pin, requires = projects.python_pin(project), projects.requires_python(project)
+        parts = ([f"{pin} ({projects.PYTHON_VERSION})"] if pin else []) + \
+            ([f"{requires} (requires-python)"] if requires else [])
+        return " · ".join(parts) or "any (not pinned)"
+
     def _update_buttons(self, project: Optional[Project], env: Optional[venvs.VirtualEnv]) -> None:
+        self.pin_btn.setEnabled(project is not None)
         self.create_btn.setEnabled(project is not None and env is None)
         for btn in self.env_buttons:
             btn.setEnabled(env is not None)
@@ -259,6 +280,7 @@ class ProjectsPage(QWidget):
             return
         default = config.get("default_python")
         index = next((i for i, b in enumerate(bases) if default and str(b.executable) == default), 0)
+        index = projects.preferred_python(project, [b.version for b in bases], index)
         label, ok = QInputDialog.getItem(self, "Create environment",
                                          f"Python for {project.name}/.venv:", [b.label for b in bases], index, False)
         if not ok:
@@ -271,6 +293,30 @@ class ProjectsPage(QWidget):
 
         self.tasks.run(f"Creating {project.name}/.venv",
                        lambda ctx: projects.create_env(project, base.executable, ctx), done)
+
+    def set_python(self) -> None:
+        project = self.project()
+        if not project:
+            return
+        minors = []
+        for interp in self.state.interpreters(include_envs=False):
+            minor = ".".join(interp.version.split(".")[:2])
+            if minor not in minors:
+                minors.append(minor)
+        minors.sort(key=lambda v: tuple(int(n) for n in v.split(".") if n.isdigit()), reverse=True)
+        current = projects.python_pin(project)
+        choices = [current] + [m for m in minors if m != current] if current else minors
+        version, ok = QInputDialog.getItem(
+            self, "Python version", f"Python for {project.name} ({projects.PYTHON_VERSION}; empty removes it):",
+            choices or [""], 0, True)
+        if not ok:
+            return
+        try:
+            projects.set_python_pin(project, version)
+        except OSError as exc:
+            QMessageBox.warning(self, "Python version", str(exc))
+            return
+        self._show(keep_source=True)
 
     def sync(self) -> None:
         project = self.project()

@@ -16,6 +16,7 @@ from .tasks import NULL, CommandError, TaskContext, capture, run
 PYPROJECT = "pyproject.toml"
 REQUIREMENTS = "requirements.txt"
 UV_LOCK = "uv.lock"
+PYTHON_VERSION = ".python-version"  # read by uv and pyenv
 PROJECT_FILES = (PYPROJECT, REQUIREMENTS, UV_LOCK)
 
 OK = "OK"
@@ -88,8 +89,9 @@ class Project:
     def watched_paths(self) -> list[Path]:
         """Files and folders whose changes can change the comparison."""
         result = [self.path] + [s.path for s in self.sources()]
-        if (self.path / UV_LOCK).is_file():
-            result.append(self.path / UV_LOCK)
+        for name in (UV_LOCK, PYTHON_VERSION):
+            if (self.path / name).is_file():
+                result.append(self.path / name)
         env = self.env()
         if env:
             result += venvs.site_packages(env)
@@ -171,6 +173,89 @@ def read_requirements(source: Path | Source) -> list[str]:
     if source.path.name.endswith(".toml"):
         return projectfile.pyproject_requirements(source.path, source.extras, source.groups)
     return _requirements_lines(source.path, set())
+
+
+def python_pin(project: Project) -> str:
+    """The version in ``.python-version`` (its first entry), or empty."""
+    try:
+        text = (project.path / PYTHON_VERSION).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            return line
+    return ""
+
+
+def set_python_pin(project: Project, version: str) -> None:
+    """Write ``.python-version``; an empty version removes the file."""
+    target = project.path / PYTHON_VERSION
+    if version.strip():
+        target.write_text(version.strip() + "\n", encoding="utf-8")
+    elif target.is_file():
+        target.unlink()
+
+
+def requires_python(project: Project) -> str:
+    """``requires-python`` from pyproject.toml, or empty."""
+    pyproject = project.path / PYPROJECT
+    if not pyproject.is_file():
+        return ""
+    try:
+        return str(projectfile.read_pyproject(pyproject).get("project", {}).get("requires-python") or "").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _numbers(version: str) -> tuple[int, ...]:
+    match = re.search(r"\d+(?:\.\d+)*", version)
+    return tuple(int(n) for n in match.group().split(".")) if match else ()
+
+
+def pin_matches(pin: str, version: str) -> bool:
+    """Whether Python ``version`` is what a ``.python-version`` entry asks for.
+
+    ``3.12`` matches every 3.12.x; ``cpython-3.12``, ``cpython@3.12`` and ``3.13t`` are understood.
+    Entries without a version (``system``) match anything.
+    """
+    wanted, actual = _numbers(pin), _numbers(version)
+    return not wanted or actual[:len(wanted)] == wanted
+
+
+def satisfies(requires: str, version: str) -> bool:
+    """Whether ``version`` is allowed by a ``requires-python`` specifier (True when it is invalid)."""
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+    numbers = ".".join(map(str, _numbers(version)))
+    try:
+        return not requires or not numbers or SpecifierSet(requires).contains(numbers, prereleases=True)
+    except InvalidSpecifier:
+        return True
+
+
+def python_problems(project: Project, version: str) -> list[str]:
+    """Why an environment on Python ``version`` does not fit the project's Python requirements."""
+    result = []
+    pin, requires = python_pin(project), requires_python(project)
+    if pin and not pin_matches(pin, version):
+        result.append(f"{PYTHON_VERSION} asks for {pin}")
+    if requires and not satisfies(requires, version):
+        result.append(f"requires-python is {requires}")
+    return result
+
+
+def preferred_python(project: Project, versions: list[str], default: int = 0) -> int:
+    """Index in ``versions`` of the Python to create the project's environment with.
+
+    ``default`` when it fits both ``.python-version`` and ``requires-python`` (or none fits),
+    otherwise the newest that does.
+    """
+    pin, requires = python_pin(project), requires_python(project)
+    fits = [i for i, v in enumerate(versions) if pin_matches(pin, v) and satisfies(requires, v)]
+    if not fits or default in fits:
+        return default
+    return max(fits, key=lambda i: _numbers(versions[i]))
 
 
 def marker_environment(python: Path) -> dict[str, str]:

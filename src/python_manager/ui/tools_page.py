@@ -5,16 +5,15 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QComboBox, QFormLayout, QGroupBox, QLabel, QLineEdit, QMessageBox, QVBoxLayout, QWidget
 
 from ..core import tools
 from ..core.tools import Tool
+from . import theme
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
 
-UPDATE_COLOR = "#ef6c00"
 NO_MANAGER = "Neither uv nor pipx was found on PATH. Install one of them to manage command-line tools."
 
 
@@ -135,7 +134,7 @@ class ToolsPage(QWidget):
         for row in range(self.table.rowCount()):
             if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) in outdated:
                 item = self.table.item(row, 2)
-                item.setForeground(QBrush(QColor(UPDATE_COLOR)))
+                theme.paint(item, "warning")
                 item.setToolTip("Update available")
         updates = f", {len(outdated)} with updates" if outdated else ""
         managers = " and ".join(tools.managers())

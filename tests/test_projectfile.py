@@ -40,6 +40,7 @@ requires = ["setuptools"]
 
 [project]
 name = "x"
+requires-python = ">=3.9"
 dependencies = [
     "a>=1",  # comment
     'b[extra]; python_version < "4"',
@@ -55,6 +56,7 @@ lint = ['ruff']
 """
     data = projectfile._toml_fallback(text)
     assert data["project"]["name"] == "x"
+    assert data["project"]["requires-python"] == ">=3.9"
     assert data["project"]["dependencies"] == ["a>=1", 'b[extra]; python_version < "4"',
                                                "c @ https://example.com/c.whl"]
     assert data["project"]["optional-dependencies"] == {"dev": ["pytest"]}

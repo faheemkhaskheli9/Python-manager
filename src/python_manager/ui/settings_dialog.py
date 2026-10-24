@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import config, paths
+from . import theme
 from .state import AppState
 from .widgets import button
 
@@ -85,11 +86,19 @@ class SettingsDialog(QDialog):
         dlay = QFormLayout(disk)
         dlay.addRow("Flag environments unchanged for:", self.stale_days)
 
+        self.theme = QComboBox()
+        for key, label in theme.MODES.items():
+            self.theme.addItem(label, key)
+        self.theme.setCurrentIndex(max(self.theme.findData(config.get("theme")), 0))
+        appearance = QGroupBox("Appearance")
+        alay = QFormLayout(appearance)
+        alay.addRow("Theme:", self.theme)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
-        for box in (general, envs, checks, disk):
+        for box in (appearance, general, envs, checks, disk):
             layout.addWidget(box)
         layout.addWidget(buttons)
 
@@ -110,5 +119,6 @@ class SettingsDialog(QDialog):
             auto_check_security=self.security.isChecked(),
             notify=self.notify.isChecked(),
             stale_days=self.stale_days.value(),
+            theme=self.theme.currentData(),
         )
         config.save(data)

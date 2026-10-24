@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -22,9 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import conda, config, favorites, packages, paths, venvs
+from ..core import conda, config, favorites, kernels, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
+from .kernels_dialog import KernelsDialog
 from .state import AppState
 from .tasks import TaskManager
 from .upgrade_dialog import update_all
@@ -130,11 +132,15 @@ class VenvsPage(QWidget):
         super().__init__()
         self.state, self.tasks, self.manage_packages = state, tasks, manage_packages
 
-        self.table = make_table(["Name", "Python", "Updates", "Location", "Base interpreter"], stretch=3)
+        self.table = make_table(["Name", "Python", "Updates", "Jupyter kernel", "Location", "Base interpreter"],
+                                stretch=4)
+        self._kernels: list[kernels.Kernel] = []
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.doubleClicked.connect(lambda _: self._manage())
         self.overlay = loading_overlay(self.table)
         self.activate_hint = QLineEdit(readOnly=True, placeholderText="Activation command")
+        self.kernel_btn = button("Add Jupyter kernel", self._toggle_kernel,
+                                 "Make the environment selectable in Jupyter (installs ipykernel if needed)")
         self.unregister_btn = button("Remove from list", self._unregister, "Forget the environment without deleting files")
         self.selection_buttons = [
             button("Manage packages", self._manage),
@@ -142,6 +148,7 @@ class VenvsPage(QWidget):
             button("Update all…", self._update_all, "Choose which outdated packages to update"),
             button("Export…", self._export, "Save as requirements.txt, pylock.toml or pyproject.toml"),
             button("Open terminal", self._terminal, "Open a terminal with the environment activated"),
+            self.kernel_btn,
             button("Open folder", lambda: self._with_selected(lambda e: open_folder(e.path))),
             self.unregister_btn,
             button("Delete", self._delete),
@@ -151,6 +158,8 @@ class VenvsPage(QWidget):
                                     button("Create from file…", self._create_from_file,
                                            "New environment from a requirements.txt or pyproject.toml"),
                                     button("Add existing…", self._add_existing),
+                                    button("Jupyter kernels…", self._kernels_dialog,
+                                           "All installed kernels; remove the ones whose Python is gone"),
                                     button("Refresh", lambda: self.state.refresh())))
         layout.addWidget(self.table)
         layout.addWidget(self.activate_hint)
@@ -188,7 +197,9 @@ class VenvsPage(QWidget):
         return report.summary if report else ""
 
     def _render(self) -> None:
-        rows = [(e, (e.name, e.version, self._status(e), str(e.path), e.base or "?")) for e in self.state.envs]
+        self._kernels = kernels.list_kernels()
+        rows = [(e, (e.name, e.version, self._status(e), self._kernel_names(e), str(e.path), e.base or "?"))
+                for e in self.state.envs]
         fill_table(self.table, rows)
         self.table.setToolTip("Updates: result of the last scheduled check (File → Check environments now)")
         self._update_buttons()
@@ -196,6 +207,12 @@ class VenvsPage(QWidget):
                                       for e in self.state.conda_envs])
         self.conda_box.setVisible(bool(self.state.conda_envs))
         self._update_conda_buttons()
+
+    def _env_kernels(self, env: VirtualEnv) -> list[kernels.Kernel]:
+        return kernels.kernels_for(env.executable, self._kernels)
+
+    def _kernel_names(self, env: VirtualEnv) -> str:
+        return ", ".join(k.display_name for k in self._env_kernels(env))
 
     def _with_conda(self, fn) -> None:
         env = selected_payload(self.conda_table)
@@ -225,6 +242,8 @@ class VenvsPage(QWidget):
             btn.setEnabled(env is not None)
         if env:
             self.unregister_btn.setEnabled(not env.managed)
+            self.kernel_btn.setText("Remove Jupyter kernel" if self._env_kernels(env) else "Add Jupyter kernel")
+            self.kernel_btn.setEnabled(env.valid or bool(self._env_kernels(env)))
         self.activate_hint.setText(venvs.activation_command(env) if env else "")
 
     def create(self, source: Optional[VirtualEnv] = None, packages_file: str = "") -> None:
@@ -272,6 +291,36 @@ class VenvsPage(QWidget):
         env = self._selected()
         if env:
             update_all(self, self.state, self.tasks, env.executable, env.name, lambda: None, self.overlay)
+
+    def _toggle_kernel(self) -> None:
+        env = self._selected()
+        if not env:
+            return
+        existing = self._env_kernels(env)
+        if existing:
+            names = "\n".join(f"{k.display_name} ({k.path})" for k in existing)
+            if QMessageBox.question(self, "Remove Jupyter kernel", f"Remove the kernel of {env.name}?\n\n{names}") \
+                    != QMessageBox.StandardButton.Yes:
+                return
+
+            def remove(ctx):
+                for kernel in existing:
+                    kernels.remove(kernel, ctx)
+
+            self.tasks.run(f"Removing the Jupyter kernel of {env.name}", remove, lambda _: self._render())
+            return
+        display, ok = QInputDialog.getText(self, "Add Jupyter kernel", "Name shown in Jupyter:",
+                                           text=f"Python {env.version} ({env.name})")
+        if not ok or not display.strip():
+            return
+        name = kernels.kernel_name(env.name, [k.name for k in self._kernels])
+        self.tasks.run(f"Adding a Jupyter kernel for {env.name}",
+                       lambda ctx: kernels.register(env.executable, name, display.strip(), ctx),
+                       lambda _: self._render())
+
+    def _kernels_dialog(self) -> None:
+        KernelsDialog(self.tasks, self).exec()
+        self._render()
 
     def _add_existing(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Select a virtual environment folder")

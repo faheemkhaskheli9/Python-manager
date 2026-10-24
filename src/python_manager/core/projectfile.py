@@ -89,9 +89,10 @@ def _toml_arrays(text: str, table: str) -> dict[str, list]:
 def _toml_fallback(text: str) -> dict:
     """The parts of a pyproject.toml read here, for Python < 3.11 (no tomllib)."""
     project = _toml_arrays(text, "project")
-    name = re.search(r'^name\s*=\s*("[^"]*"|\'[^\']*\')', _toml_table(text, "project"), re.M)
-    if name:
-        project["name"] = _toml_string(name.group(1))
+    for key in ("name", "requires-python"):
+        value = re.search(rf'^{key}\s*=\s*("[^"]*"|\'[^\']*\')', _toml_table(text, "project"), re.M)
+        if value:
+            project[key] = _toml_string(value.group(1))
     project["optional-dependencies"] = _toml_arrays(text, "project.optional-dependencies")
     return {"project": project, "dependency-groups": _toml_arrays(text, "dependency-groups")}
 
