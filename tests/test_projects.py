@@ -157,3 +157,43 @@ def test_preferred_python(tmp_path):
     assert projects.preferred_python(project, versions, 2) == 2  # the default fits
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nrequires-python = ">=3.20"\n')
     assert projects.preferred_python(project, versions, 3) == 3  # none fits
+
+
+def _remote(version, freethreaded=False):
+    from python_manager.core.python_versions import RemotePython
+
+    return RemotePython(version, "1", freethreaded, f"cpython-{version}.tar.gz", "https://example.org/x")
+
+
+def test_matching_download(tmp_path):
+    project = projects.Project(tmp_path)
+    available = [_remote("3.14.0rc1"), _remote("3.13.2"), _remote("3.13.2", True), _remote("3.12.9")]
+    assert projects.matching_download(project, available).version == "3.13.2"  # newest final release
+    (tmp_path / ".python-version").write_text("3.12\n")
+    assert projects.matching_download(project, available).version == "3.12.9"
+    (tmp_path / ".python-version").write_text("3.13t\n")
+    assert projects.matching_download(project, available).freethreaded
+    (tmp_path / ".python-version").write_text("3.14\n")
+    assert projects.matching_download(project, available).version == "3.14.0rc1"  # only a pre-release fits
+    (tmp_path / ".python-version").unlink()
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nrequires-python = "<3.12"\n')
+    assert projects.matching_download(project, available) is None
+
+
+def test_install_python_and_env(tmp_path, monkeypatch):
+    from python_manager.core import python_versions
+    from python_manager.core.interpreters import MANAGED, Interpreter
+
+    project = projects.Project(tmp_path)
+    remote = _remote("3.13.2")
+    calls = []
+    monkeypatch.setattr(python_versions, "installed_keys", lambda: set())
+    monkeypatch.setattr(python_versions, "install", lambda r, ctx: calls.append(r) or
+                        Interpreter(Path(sys.executable), r.version, MANAGED, r.key))
+    monkeypatch.setattr(projects, "create_env", lambda p, exe, ctx, install: (p, exe, install))
+    assert projects.install_python_and_env(project, remote) == (project, Path(sys.executable), True)
+    assert calls == [remote]
+    monkeypatch.setattr(python_versions, "installed_keys", lambda: {remote.key})  # already installed: reused
+    monkeypatch.setattr(python_versions, "find_executable", lambda root: Path(sys.executable))
+    projects.install_python_and_env(project, remote)
+    assert calls == [remote]

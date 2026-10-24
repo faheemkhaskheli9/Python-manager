@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import config, imports, projects, venvs
+from ..core import config, imports, projects, python_versions, venvs
 from ..core.projects import Check, Project, Source
 from .export_dialog import export_environment
 from .imports_dialog import ImportsDialog
@@ -177,7 +177,11 @@ class ProjectsPage(QWidget):
         env = project.env()
         self.path.setText(str(project.path))
         self.files.setText(", ".join(project.files) or "none")
-        self.python.setText(self._python_text(project))
+        python_text = self._python_text(project)
+        if env is None and (projects.python_pin(project) or projects.requires_python(project)) and not any(
+                projects.fits(project, b.version) for b in self.state.interpreters(include_envs=False)):
+            python_text += " ⚠ no installed Python fits; Create environment… can install one"
+        self.python.setText(python_text)
         env_text = f"{env.path.name} (Python {env.version})" if env else "none"
         problems = projects.python_problems(project, env.version) if env else []
         if problems:
@@ -278,9 +282,19 @@ class ProjectsPage(QWidget):
         if not project:
             return
         bases = self.state.interpreters(include_envs=False)
-        if not bases:
-            QMessageBox.information(self, "No Python", "Install a Python on the Python Versions page first.")
-            return
+        if not any(projects.fits(project, b.version) for b in bases):
+            box = QMessageBox(QMessageBox.Icon.Question, "Create environment",
+                              f"No installed Python fits {project.name} ({self._python_text(project)}).\n\n"
+                              "Download and install a matching Python, then create the environment on it?", parent=self)
+            install = box.addButton("Install Python", QMessageBox.ButtonRole.AcceptRole)
+            anyway = box.addButton("Use an installed one", QMessageBox.ButtonRole.ActionRole) if bases else None
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.exec()
+            if box.clickedButton() is install:
+                self._install_python(project)
+                return
+            if anyway is None or box.clickedButton() is not anyway:
+                return
         default = config.get("default_python")
         index = next((i for i, b in enumerate(bases) if default and str(b.executable) == default), 0)
         index = projects.preferred_python(project, [b.version for b in bases], index)
@@ -296,6 +310,33 @@ class ProjectsPage(QWidget):
 
         self.tasks.run(f"Creating {project.name}/.venv",
                        lambda ctx: projects.create_env(project, base.executable, ctx), done)
+
+    def _install_python(self, project: Project) -> None:
+        """Look up the newest downloadable Python that fits the project, install it and create .venv."""
+        count = int(config.get("release_count"))
+
+        def found(available) -> None:
+            remote = projects.matching_download(project, available)
+            if remote is None:
+                QMessageBox.information(self, "Create environment",
+                                        f"No downloadable Python fits {project.name} "
+                                        f"({self._python_text(project)}).")
+                return
+            if QMessageBox.question(
+                    self, "Create environment",
+                    f"Install Python {remote.version} ({remote.variant}) and create "
+                    f"{project.name}/.venv on it?") != QMessageBox.StandardButton.Yes:
+                return
+
+            def done(_):
+                self.state.refresh()
+                self._show()
+
+            self.tasks.run(f"Installing Python {remote.version} for {project.name}",
+                           lambda ctx: projects.install_python_and_env(project, remote, ctx), done)
+
+        self.tasks.run("Fetching available Python versions",
+                       lambda ctx: python_versions.list_available(count, ctx), found)
 
     def set_python(self) -> None:
         project = self.project()
