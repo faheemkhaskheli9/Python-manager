@@ -10,6 +10,16 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Compare: *Compare…* on the Packages page shows two interpreters' or environments' packages side by
+  side and can install the left side's versions on the right. ([#11])
+- Find package: *Find package…* on the Virtual Environments page lists every interpreter and
+  environment with a matching package; double-click one to manage its packages. ([#11])
+- Rebuild: *Rebuild…* on the Virtual Environments page recreates an environment in the same folder
+  on another Python with the same packages, restoring the old one if it fails; it also works when
+  the environment's Python is gone. After a Python update the environments on the old Python can
+  be rebuilt on the new one in one step. ([#11])
+- Packages page: a *Size* column with the disk space of each package, and the total in the status
+  line. ([#11])
 - Package index: *File → Settings → Package index* sets an index URL (a private index or mirror),
   extra indexes and trusted hosts for every pip, uv and pipx command. ([#10])
 - Python updates: the Pythons page shows when an installed Python has a newer patch release and
@@ -143,3 +153,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
+[#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

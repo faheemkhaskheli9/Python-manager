@@ -56,6 +56,9 @@ def test_main_window_pages(app, monkeypatch):
         assert window.stack.currentIndex() == row
     wait_until(app, lambda: not window.tasks.busy)
     assert window.packages.target.count() >= 1  # at least the Python running the tests
+    table = window.packages.table
+    wait_until(app, lambda: window.packages._sizes)
+    assert any(table.item(r, 5).text().endswith("B") for r in range(table.rowCount()))
     window.packages.show_licenses()
     wait_until(app, lambda: opened)
     assert opened[0] and all(isinstance(i, licenses.PackageLicense) for i in opened[0])
@@ -138,3 +141,78 @@ def test_pythons_page_offers_patch_update(app, monkeypatch):
     page.install_update()
     wait_until(app, lambda: installs and app.shown_messages)
     assert installs == [new] and app.shown_messages[-1][0] == "information"
+
+
+def test_python_update_rebuilds_dependents(app, monkeypatch):
+    from python_manager.core import python_versions, venvs
+    from python_manager.core.interpreters import MANAGED, Interpreter
+    from python_manager.core.python_versions import RemotePython
+    from python_manager.ui.pythons_page import PythonsPage
+    from python_manager.ui.state import AppState
+    from python_manager.ui.tasks import TaskManager
+
+    old = Interpreter(python_versions.paths.pythons_dir() / "bin" / "python3", "3.12.4", MANAGED, "cpython-3.12.4")
+    installed = Interpreter(python_versions.paths.pythons_dir() / "new" / "python3", "3.12.11", MANAGED, "new")
+    new = RemotePython("3.12.11", "20250101", False, "x.tar.gz", "https://example/x")
+    envs = [venvs.VirtualEnv(n, python_versions.paths.envs_dir() / n, "3.12.4", "", True) for n in ("a", "b")]
+    window = QtWidgets.QWidget()
+    tasks = TaskManager(window)
+    state = AppState(tasks)
+    monkeypatch.setattr(state, "interpreters", lambda include_envs=True: [old])
+    monkeypatch.setattr(python_versions, "install", lambda remote, ctx: installed)
+    rebuilt = []
+
+    def rebuild(env, base, ctx):
+        if env.name == "b":
+            raise OSError("in use")
+        rebuilt.append((env.name, base))
+
+    monkeypatch.setattr(venvs, "rebuild", rebuild)
+    page = PythonsPage(state, tasks)
+    monkeypatch.setattr(page, "_dependents", lambda interp: envs)
+    page._set_available([new])
+    page.installed.selectRow(0)
+    page.install_update()
+    wait_until(app, lambda: app.shown_messages and "Rebuild" in app.shown_messages[-1][1][0])
+    assert rebuilt == [("a", installed.executable)]
+    kind, (title, text) = app.shown_messages[-1]
+    assert kind == "warning" and "b" in text.split("\n")[-1]
+
+
+def test_compare_and_find_dialogs(app, monkeypatch):
+    from pathlib import Path
+
+    from python_manager.core import packages
+    from python_manager.core.interpreters import VENV, Interpreter
+    from python_manager.core.packages import Package
+    from python_manager.ui.compare_dialog import CompareDialog
+    from python_manager.ui.find_dialog import FindPackageDialog
+    from python_manager.ui.tasks import TaskManager
+
+    a = Interpreter(Path("/envs/a/bin/python"), "3.12.1", VENV, "a")
+    b = Interpreter(Path("/envs/b/bin/python"), "3.12.1", VENV, "b")
+    contents = {a.executable: [Package("requests", "2.32.0"), Package("idna", "3.7")],
+                b.executable: [Package("requests", "2.31.0"), Package("idna", "3.7")]}
+    monkeypatch.setattr(packages, "installed", lambda python: contents[python])
+    installs = []
+    monkeypatch.setattr(packages, "install", lambda python, specs, ctx: installs.append((python, specs)))
+    window = QtWidgets.QWidget()
+    tasks = TaskManager(window)
+
+    dialog = CompareDialog([a, b], tasks, left=a)
+    wait_until(app, lambda: dialog.rows)
+    assert dialog.table.rowCount() == 1 and dialog.table.item(0, 3).text() == "Different"
+    dialog.hide_same.setChecked(False)
+    assert dialog.table.rowCount() == 2
+    dialog.match_left()
+    wait_until(app, lambda: dialog.changed)
+    assert installs == [(b.executable, ["requests==2.32.0"])]
+
+    managed = []
+    finder = FindPackageDialog([a, b], tasks, managed.append)
+    finder.pattern.setText("req*")
+    finder.search()
+    wait_until(app, lambda: finder.table.rowCount() == 2)
+    finder.table.selectRow(0)
+    finder._manage()
+    assert managed and managed[0] in contents

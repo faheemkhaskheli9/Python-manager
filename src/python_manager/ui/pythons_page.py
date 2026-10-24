@@ -18,9 +18,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..core import config, paths, python_versions
+from ..core import config, paths, python_versions, venvs
 from ..core.interpreters import MANAGED, Interpreter
 from ..core.python_versions import RemotePython
+from ..core.venvs import VirtualEnv
 from . import theme
 from .state import AppState
 from .tasks import TaskManager
@@ -119,9 +120,9 @@ class PythonsPage(QWidget):
                 theme.paint(cell, "warning")
         self._render_available()
 
-    def _dependents(self, interp: Interpreter) -> list[str]:
+    def _dependents(self, interp: Interpreter) -> list[VirtualEnv]:
         root = os.path.realpath(paths.pythons_dir() / interp.name)
-        return [e.name for e in self.state.envs if e.base and os.path.realpath(e.base).startswith(root)]
+        return [e for e in self.state.envs if e.base and os.path.realpath(e.base).startswith(root)]
 
     def install_update(self) -> None:
         interp: Interpreter = selected_payload(self.installed)
@@ -129,20 +130,47 @@ class PythonsPage(QWidget):
         if not update or update.key in python_versions.installed_keys():
             return
 
-        def done(_) -> None:
+        def done(new: Interpreter) -> None:
             self.state.refresh()
             dependents = self._dependents(interp)
             message = f"Python {update.version} is installed next to {interp.version}."
-            if dependents:
-                message += ("\n\nThese environments still use Python " + interp.version + ":\n  "
-                            + "\n  ".join(dependents)
-                            + "\n\nClone them onto the new Python on the Virtual Environments page, "
-                              "then uninstall the old one.")
-            else:
-                message += "\n\nNo environment uses the old one; it can be uninstalled."
-            QMessageBox.information(self, "Python updated", message)
+            if not dependents:
+                QMessageBox.information(self, "Python updated",
+                                        message + "\n\nNo environment uses the old one; it can be uninstalled.")
+                return
+            message += ("\n\nThese environments still use Python " + interp.version + ":\n  "
+                        + "\n  ".join(e.name for e in dependents)
+                        + f"\n\nRebuild them on Python {update.version} now? Each keeps its folder and packages.")
+            if QMessageBox.question(self, "Python updated", message) == QMessageBox.StandardButton.Yes:
+                self.rebuild_envs(dependents, new)
 
         self.tasks.run(f"Installing Python {update.version}", lambda ctx: python_versions.install(update, ctx), done)
+
+    def rebuild_envs(self, envs: list[VirtualEnv], base: Interpreter) -> None:
+        """Rebuild ``envs`` on ``base`` one after another; one that fails is restored and the rest go on."""
+        def rebuild(ctx) -> list[str]:
+            failed = []
+            for env in envs:
+                ctx.check()
+                try:
+                    venvs.rebuild(env, base.executable, ctx)
+                except Exception as exc:  # restored by rebuild; report it and carry on
+                    ctx.log(f"Could not rebuild {env.name}: {exc}")
+                    failed.append(env.name)
+            return failed
+
+        def done(failed: list[str]) -> None:
+            self.state.refresh()
+            if failed:
+                QMessageBox.warning(self, "Rebuild environments",
+                                    "These environments could not be rebuilt and were left as they were "
+                                    "(see the Output panel):\n  " + "\n  ".join(failed))
+            else:
+                QMessageBox.information(self, "Rebuild environments",
+                                        f"{len(envs)} environments now use Python {base.version}. "
+                                        "The old Python can be uninstalled.")
+
+        self.tasks.run(f"Rebuilding {len(envs)} environments on Python {base.version}", rebuild, done)
 
     def uninstall(self) -> None:
         interp: Interpreter = selected_payload(self.installed)
@@ -151,7 +179,8 @@ class PythonsPage(QWidget):
         dependents = self._dependents(interp)
         message = f"Uninstall Python {interp.version} ({interp.name})?"
         if dependents:
-            message += "\n\nThese virtual environments use it and will stop working:\n  " + "\n  ".join(dependents)
+            message += ("\n\nThese virtual environments use it and will stop working:\n  "
+                        + "\n  ".join(e.name for e in dependents))
         if QMessageBox.question(self, "Uninstall Python", message) != QMessageBox.StandardButton.Yes:
             return
         self.tasks.run(f"Uninstalling Python {interp.version}",

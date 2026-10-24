@@ -26,9 +26,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import deps, favorites, licenses, packages, pypi_names, security
+from ..core import deps, favorites, licenses, packages, pypi_names, security, sizes
+from ..core.disk import format_size
 from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
+from .compare_dialog import CompareDialog
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
 from .licenses_dialog import LicensesDialog
@@ -36,7 +38,7 @@ from .security_dialog import SecurityDialog
 from .state import AppState
 from .tasks import TaskManager
 from .upgrade_dialog import update_all
-from .widgets import button, button_row, fill_table, loading_overlay, make_table, selected_payloads
+from .widgets import SortedItem, button, button_row, fill_table, loading_overlay, make_table, selected_payloads
 
 LATEST = "Latest"
 STAR = "★"
@@ -53,6 +55,7 @@ class PackagesPage(QWidget):
         self._graph: deps.Graph = {}
         self._required_by: dict[str, list[str]] = {}
         self._vulns: list[security.Vulnerability] = []
+        self._sizes: dict[str, Optional[int]] = {}
         self._names_requested = False
         self._generation = 0
         self._pending_select: Optional[Path] = None
@@ -85,7 +88,9 @@ class PackagesPage(QWidget):
         filter_row = QHBoxLayout()
         filter_row.addWidget(self.filter, 1)
         filter_row.addWidget(self.favorites_only)
-        self.table = make_table([STAR, "Package", "Version", "Latest", "Security", "Required by"], stretch=5, multi=True)
+        self.table = make_table([STAR, "Package", "Version", "Latest", "Security", "Size", "Required by"],
+                                stretch=6, multi=True)
+        self.table.horizontalHeaderItem(5).setToolTip("Disk space of the files the package installed")
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.overlay = loading_overlay(self.table)
         self.status = QLabel()
@@ -109,7 +114,9 @@ class PackagesPage(QWidget):
                                  button("Export…", self.export_requirements,
                                         "Save as requirements.txt, pylock.toml or pyproject.toml"),
                                  button("Licenses…", self.show_licenses,
-                                        "List each package's licence and save a report")))
+                                        "List each package's licence and save a report"),
+                                 button("Compare…", self.compare,
+                                        "Compare the packages with another interpreter or environment")))
 
         # Install / download panel
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
@@ -236,7 +243,7 @@ class PackagesPage(QWidget):
     def reload(self) -> None:
         interp = self.python
         self._packages, self._latest, self._graph, self._required_by = [], {}, {}, {}
-        self._vulns = []
+        self._vulns, self._sizes = [], {}
         self.pip_bar.hide()
         self.conda_bar.setVisible(self.read_only)
         self._render()
@@ -261,6 +268,7 @@ class PackagesPage(QWidget):
                 self._latest, self._vulns = dict(report.outdated), list(report.vulns)
             self.pip_bar.setVisible(not has_pip and not self.read_only)
             self._render()
+            self._load_sizes(interp, generation)
 
         def failed(message):
             if generation != self._generation:
@@ -284,6 +292,30 @@ class PackagesPage(QWidget):
 
         self.tasks.run("Listing packages", load, done, failed, foreground=False)
 
+    def _load_sizes(self, interp: Interpreter, generation: int) -> None:
+        def done(result) -> None:
+            if generation != self._generation:
+                return
+            self._sizes = result
+            # Fill the column in place so the selection and scroll position stay.
+            self.table.setSortingEnabled(False)
+            for row in range(self.table.rowCount()):
+                text, key = self._size_cell(self.table.item(row, 0).data(Qt.ItemDataRole.UserRole).name)
+                item = SortedItem(text, key)
+                item.setToolTip(text)
+                self.table.setItem(row, 5, item)
+            self.table.setSortingEnabled(True)
+            self._apply_filter()
+
+        self.tasks.run(f"Measuring packages ({interp.name})", lambda _: sizes.scan(interp.executable), done,
+                       lambda _: None, foreground=False)
+
+    def _size_cell(self, name: str):
+        size = self._sizes.get(deps.normalize(name))
+        if size is None:
+            return ("", -1)
+        return (format_size(size), size)
+
     def _render(self) -> None:
         favs = {favorites.normalize(f) for f in favorites.list_favorites()}
         vulns: dict[tuple[str, str], int] = {}
@@ -296,7 +328,8 @@ class PackagesPage(QWidget):
             users = ", ".join(self._required_by.get(deps.normalize(p.name), []))
             count = vulns.get((deps.normalize(p.name), p.version), 0)
             alert = f"{WARN} {count}" if count else ""
-            rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), alert, users)))
+            rows.append((p, (STAR if fav else "", p.name, p.version, self._latest.get(p.name, ""), alert,
+                             self._size_cell(p.name), users)))
         fill_table(self.table, rows)
         self._render_favorites()
         self._apply_filter()
@@ -314,7 +347,9 @@ class PackagesPage(QWidget):
         if self._packages:
             updates = f", {len(self._latest)} with updates" if self._latest else ""
             listed = f"{shown} of {len(self._packages)}" if shown != len(self._packages) else f"{shown}"
-            self.status.setText(f"{listed} packages{updates} · using {packages.backend()}")
+            total = sum(v for v in self._sizes.values() if v)
+            size = f" · {format_size(total)}" if total else ""
+            self.status.setText(f"{listed} packages{updates}{size} · using {packages.backend()}")
         self._update_buttons()
 
     def _selected_names(self) -> list[str]:
@@ -422,6 +457,16 @@ class PackagesPage(QWidget):
         if self.tasks.run(f"Reading licences ({interp.name})", lambda _: licenses.scan(interp.executable), done,
                           self._failed("Licenses")):
             self.overlay.start("Reading package licences…")
+
+    def compare(self) -> None:
+        interpreters = self.state.interpreters()
+        if len(interpreters) < 2:
+            QMessageBox.information(self, "Compare", "There is only one interpreter to compare.")
+            return
+        dialog = CompareDialog(interpreters, self.tasks, self, self.python)
+        dialog.exec()
+        if dialog.changed:
+            self.reload()
 
     def _failed(self, title: str):
         """Error handler for a task shown with the overlay: hide it and report the error."""

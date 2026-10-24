@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from ..core import conda, config, favorites, kernels, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
+from .find_dialog import FindPackageDialog
 from .kernels_dialog import KernelsDialog
 from .state import AppState
 from .tasks import TaskManager
@@ -145,6 +146,8 @@ class VenvsPage(QWidget):
         self.selection_buttons = [
             button("Manage packages", self._manage),
             button("Clone…", self.clone, "New environment with the same packages"),
+            button("Rebuild…", self.rebuild,
+                   "Recreate the environment in place on another Python with the same packages"),
             button("Update all…", self._update_all, "Choose which outdated packages to update"),
             button("Export…", self._export, "Save as requirements.txt, pylock.toml or pyproject.toml"),
             button("Open terminal", self._terminal, "Open a terminal with the environment activated"),
@@ -158,6 +161,8 @@ class VenvsPage(QWidget):
                                     button("Create from file…", self._create_from_file,
                                            "New environment from a requirements.txt or pyproject.toml"),
                                     button("Add existing…", self._add_existing),
+                                    button("Find package…", self._find_package,
+                                           "Which interpreters and environments have a package"),
                                     button("Jupyter kernels…", self._kernels_dialog,
                                            "All installed kernels; remove the ones whose Python is gone"),
                                     button("Refresh", lambda: self.state.refresh())))
@@ -277,6 +282,27 @@ class VenvsPage(QWidget):
         if env:
             self.create(source=env)
 
+    def rebuild(self) -> None:
+        env = self._selected()
+        if not env:
+            return
+        bases = self.state.interpreters(include_envs=False)
+        if not bases:
+            QMessageBox.information(self, "Rebuild", "No Python found. Install one on the Python Versions page first.")
+            return
+        current = venvs.base_executable(env)
+        index = next((i for i, b in enumerate(bases)
+                      if current and os.path.realpath(b.executable) == os.path.realpath(current)), 0)
+        label, ok = QInputDialog.getItem(
+            self, f"Rebuild {env.name}",
+            f"Recreate {env.name} (Python {env.version}) in the same folder with the same packages on:",
+            [b.label for b in bases], index, False)
+        if not ok:
+            return
+        base = bases[[b.label for b in bases].index(label)]
+        self.tasks.run(f"Rebuilding {env.name} on Python {base.version}",
+                       lambda ctx: venvs.rebuild(env, base.executable, ctx), lambda _: self.state.refresh())
+
     def _create_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Create environment from", "", FILE_FILTER)
         if path:
@@ -317,6 +343,9 @@ class VenvsPage(QWidget):
         self.tasks.run(f"Adding a Jupyter kernel for {env.name}",
                        lambda ctx: kernels.register(env.executable, name, display.strip(), ctx),
                        lambda _: self._render())
+
+    def _find_package(self) -> None:
+        FindPackageDialog(self.state.interpreters(), self.tasks, self.manage_packages, self).exec()
 
     def _kernels_dialog(self) -> None:
         KernelsDialog(self.tasks, self).exec()

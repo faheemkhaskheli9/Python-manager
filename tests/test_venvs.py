@@ -89,3 +89,44 @@ def test_failed_package_install_removes_env(backend, tmp_path):
     with pytest.raises(CommandError):
         venvs.create("bad-reqs", Path(sys.executable), tmp_path, packages_file=req)
     assert not (tmp_path / "bad-reqs").exists()
+
+
+def test_rebuild_keeps_path_and_packages(backend, tmp_path, monkeypatch):
+    from test_packages import _build_wheel
+
+    wheel = _build_wheel(tmp_path)
+    req = tmp_path / "requirements.txt"
+    req.write_text(f"--no-index\n{wheel}\n", encoding="utf-8")
+    env = venvs.create("rebuilt", Path(sys.executable), with_pip=False, packages_file=req)
+    marker = env.path / "old-marker"
+    marker.write_text("", encoding="utf-8")
+
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    monkeypatch.setenv("PIP_FIND_LINKS", str(tmp_path))
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setenv("UV_FIND_LINKS", str(tmp_path))
+    new = venvs.rebuild(env, Path(sys.executable))
+    assert new.path == env.path and new.valid and not marker.exists()
+    assert "pm-demo" in {p.name.lower() for p in packages.list_packages(new.executable)}
+    assert [e.name for e in venvs.list_envs()] == ["rebuilt"]  # no backup left behind
+    assert [p.name for p in paths.envs_dir().iterdir()] == ["rebuilt"]
+
+
+def test_failed_rebuild_restores_env(backend, tmp_path):
+    env = venvs.create("keep", Path(sys.executable), tmp_path / "envs", with_pip=False)
+    marker = env.path / "old-marker"
+    marker.write_text("", encoding="utf-8")
+    with pytest.raises((OSError, CommandError)):
+        venvs.rebuild(env, tmp_path / "no-python")
+    assert marker.exists() and env.valid
+    assert [p.name for p in (tmp_path / "envs").iterdir()] == ["keep"]
+
+
+def test_requirements_of_broken_env(tmp_path, monkeypatch):
+    env = venvs.create("orphan", Path(sys.executable), tmp_path, with_pip=False)
+    site = venvs.site_packages(env)[0]
+    dist = site / "pm_orphan-1.2.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: pm-orphan\nVersion: 1.2\n", encoding="utf-8")
+    monkeypatch.setattr(venvs, "is_broken", lambda _env: True)
+    assert venvs.requirements_of(env) == "pm-orphan==1.2\n"
