@@ -10,6 +10,8 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Package history: a snapshot of the packages is saved before each change made from the Packages page,
+  *Update all* or *Compare…*; *History…* on the Packages page lists them and restores one. ([#12])
 - Compare: *Compare…* on the Packages page shows two interpreters' or environments' packages side by
   side and can install the left side's versions on the right. ([#11])
 - Find package: *Find package…* on the Virtual Environments page lists every interpreter and
@@ -85,6 +87,14 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
   `<project>/.venv`. ([#3])
 
 ### Fixed
+- Rebuild: environments installed from a folder (editable), archive or VCS keep that source when
+  rebuilt from a broken environment. ([#12])
+- Rebuild: Jupyter kernels that ran a versioned interpreter (e.g. `python3.12`) are pointed at the
+  rebuilt environment. ([#12])
+- Rebuild after a Python update no longer includes environments on the free-threaded build of the
+  same version. ([#12])
+- Environments in the envs folder whose names start with `.` or contain spaces are listed again;
+  only rebuild backups are hidden. ([#12])
 - Jupyter kernels: a `kernel.json` that is valid JSON but not a kernel spec (`[]`, `null`, a
   non-list `argv`) is skipped instead of stopping the Virtual Environments page from loading, and
   `JUPYTER_PATH` folders now take precedence over the user folder, as in Jupyter. ([#9])
@@ -153,4 +163,5 @@ First version. These changes were committed directly to `main`, before pull requ
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
+[#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

@@ -26,13 +26,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import deps, favorites, licenses, packages, pypi_names, security, sizes
+from ..core import deps, favorites, history, licenses, packages, pypi_names, security, sizes
 from ..core.disk import format_size
 from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
 from .compare_dialog import CompareDialog
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
+from .history_dialog import HistoryDialog
 from .licenses_dialog import LicensesDialog
 from .security_dialog import SecurityDialog
 from .state import AppState
@@ -116,7 +117,9 @@ class PackagesPage(QWidget):
                                  button("Licenses…", self.show_licenses,
                                         "List each package's licence and save a report"),
                                  button("Compare…", self.compare,
-                                        "Compare the packages with another interpreter or environment")))
+                                        "Compare the packages with another interpreter or environment"),
+                                 button("History…", self.show_history,
+                                        "Snapshots taken before each change; restore an earlier state")))
 
         # Install / download panel
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
@@ -370,8 +373,11 @@ class PackagesPage(QWidget):
             return
         if self._refuse_read_only():
             return
-        self.tasks.run(f"{title} ({interp.name})", lambda ctx: fn(interp.executable, ctx),
-                       lambda _: self.reload())
+        def change(ctx):
+            history.snapshot(interp.executable, title)
+            return fn(interp.executable, ctx)
+
+        self.tasks.run(f"{title} ({interp.name})", change, lambda _: self.reload())
 
     def uninstall(self) -> None:
         names = self._selected_names()
@@ -464,6 +470,15 @@ class PackagesPage(QWidget):
             QMessageBox.information(self, "Compare", "There is only one interpreter to compare.")
             return
         dialog = CompareDialog(interpreters, self.tasks, self, self.python)
+        dialog.exec()
+        if dialog.changed:
+            self.reload()
+
+    def show_history(self) -> None:
+        interp = self.python
+        if interp is None or self._refuse_read_only():
+            return
+        dialog = HistoryDialog(interp.executable, interp.name, self._packages, self.tasks, self)
         dialog.exec()
         if dialog.changed:
             self.reload()

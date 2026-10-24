@@ -14,6 +14,9 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   version, only on one side) and installs the left side's versions on the right in one click.
   *Find package…* lists every interpreter and environment that has a package (name, part of it or
   a pattern such as `django-*`).
+- **Package history** – a snapshot of an environment's packages is saved before every install,
+  upgrade or uninstall made with the app. *History…* on the Packages page lists them and restores
+  one: its versions are installed and packages added since are removed.
 - **Update all** – one click lists every outdated package with its installed and new version,
   flags major versions and, on the Projects page, updates the project's requirements exclude.
   Untick what to keep, update the rest, and see what changed plus any broken requirements.
@@ -95,6 +98,7 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Python updates | An installed Python is flagged when the build list has a newer patch release of the same minor version and variant. The update is installed next to it; environments keep using the old one until they are rebuilt on the new one. |
 | Rebuild | The pinned package list is read (`pip freeze`, or the metadata in site-packages when the environment's Python is gone), the old folder is moved aside, a new environment is created at the same path and the packages are installed. If that fails the old folder is put back. |
 | Compare / find | Installed packages are read from each interpreter's metadata, as on the Packages page; names are compared after PEP 503 normalisation. |
+| Package history | Name/version pairs from installed metadata, saved in `history/` in the app data folder (30 per environment). Restoring installs the pinned versions and uninstalls packages the snapshot did not have, except pip, setuptools and wheel. |
 | Package sizes | The sizes of the files each package's `RECORD` lists, read inside the environment; packages without a file list show no size. |
 | Name autocomplete | PyPI's JSON simple index (`https://pypi.org/simple/`), cached in the app data folder and refreshed weekly. |
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
@@ -126,7 +130,7 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, licenses, sizes, compare, health, disk, tools, conda, kernels, logs
+          # lock, security, licenses, sizes, compare, history, health, disk, tools, conda, kernels, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core plus offscreen UI smoke tests
 ```

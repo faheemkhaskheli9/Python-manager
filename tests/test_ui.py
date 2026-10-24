@@ -216,3 +216,26 @@ def test_compare_and_find_dialogs(app, monkeypatch):
     finder.table.selectRow(0)
     finder._manage()
     assert managed and managed[0] in contents
+
+
+def test_history_dialog_restores(app, monkeypatch):
+    from pathlib import Path
+
+    from python_manager.core import history, packages
+    from python_manager.core.packages import Package
+    from python_manager.ui.history_dialog import HistoryDialog
+    from python_manager.ui.tasks import TaskManager
+
+    python = Path("/envs/demo/bin/python")
+    monkeypatch.setattr(packages, "installed", lambda _py: [Package("requests", "2.31.0")])
+    history.snapshot(python, "Upgrading requests")
+    current = [Package("requests", "2.32.0"), Package("extra", "1.0")]
+    restored = []
+    monkeypatch.setattr(history, "restore", lambda py, snap, ctx: restored.append(snap))
+    window = QtWidgets.QWidget()
+    dialog = HistoryDialog(python, "demo", current, TaskManager(window), window)
+    assert dialog.table.rowCount() == 1 and dialog.restore_btn.isEnabled()
+    assert "requests==2.31.0" in dialog.details.text() and "extra" in dialog.details.text()
+    dialog.restore()
+    wait_until(app, lambda: dialog.changed)
+    assert restored and restored[0].action == "Upgrading requests"

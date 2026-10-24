@@ -130,3 +130,64 @@ def test_requirements_of_broken_env(tmp_path, monkeypatch):
     (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: pm-orphan\nVersion: 1.2\n", encoding="utf-8")
     monkeypatch.setattr(venvs, "is_broken", lambda _env: True)
     assert venvs.requirements_of(env) == "pm-orphan==1.2\n"
+
+
+def test_requirements_of_broken_env_keeps_direct_sources(tmp_path, monkeypatch):
+    import json
+
+    env = venvs.create("direct", Path(sys.executable), tmp_path, with_pip=False)
+    site = venvs.site_packages(env)[0]
+    sources = {
+        "pm-edit": {"url": "file:///src/pm-edit", "dir_info": {"editable": True}},
+        "pm-git": {"url": "https://example.com/pm-git.git", "vcs_info": {"vcs": "git", "commit_id": "abc123"}},
+        "pm-zip": {"url": "file:///wheels/pm_zip-1.0.zip", "archive_info": {}},
+        "pm-index": None,
+    }
+    for name, info in sources.items():
+        dist = site / f"{name.replace('-', '_')}-1.0.dist-info"
+        dist.mkdir()
+        (dist / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0\n", encoding="utf-8")
+        if info:
+            (dist / "direct_url.json").write_text(json.dumps(info), encoding="utf-8")
+    monkeypatch.setattr(venvs, "is_broken", lambda _env: True)
+    assert venvs.requirements_of(env).splitlines() == [
+        "-e file:///src/pm-edit",
+        "pm-git @ git+https://example.com/pm-git.git@abc123",
+        "pm-index==1.0",
+        "pm-zip @ file:///wheels/pm_zip-1.0.zip",
+    ]
+
+
+def test_list_envs_skips_only_rebuild_backups():
+    for name in (".hidden", "with space", ".demo.rebuild-123"):
+        (paths.envs_dir() / name).mkdir()
+        (paths.envs_dir() / name / "pyvenv.cfg").write_text("version = 3.12.0\n", encoding="utf-8")
+    assert [e.name for e in venvs.list_envs()] == [".hidden", "with space"]
+
+
+def test_created_from_matches_folder_boundary(tmp_path):
+    def env(base):
+        return venvs.VirtualEnv("e", tmp_path / "e", "3.13.1", str(base), True)
+
+    root = tmp_path / "cpython-3.13.1"
+    assert venvs.created_from(env(root / "bin" / "python3"), root)
+    assert not venvs.created_from(env(tmp_path / "cpython-3.13.1t" / "bin" / "python3"), root)
+    assert not venvs.created_from(env(""), root)
+
+
+def test_rebuild_retargets_versioned_kernel(backend, tmp_path, monkeypatch):
+    import json
+
+    from python_manager.core import kernels
+
+    env = venvs.create("kern", Path(sys.executable), with_pip=False)
+    versioned = env.executable.with_name("python9.99")
+    versioned.write_text("", encoding="utf-8")
+    spec = tmp_path / "kernels" / "kern"
+    spec.mkdir(parents=True)
+    (spec / "kernel.json").write_text(json.dumps({"argv": [str(versioned), "-m", "ipykernel_launcher"],
+                                                  "display_name": "kern"}), encoding="utf-8")
+    monkeypatch.setattr(kernels, "data_dirs", lambda: [tmp_path])
+    new = venvs.rebuild(env, Path(sys.executable))
+    argv = json.loads((spec / "kernel.json").read_text(encoding="utf-8"))["argv"]
+    assert argv == [str(new.executable), "-m", "ipykernel_launcher"]
