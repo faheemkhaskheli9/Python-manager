@@ -102,21 +102,65 @@ class PackageLicense:
         return category(self.license)
 
 
+_ORDER = [PUBLIC_DOMAIN, PERMISSIVE, WEAK_COPYLEFT, COPYLEFT, OTHER]  # least to most restrictive
+_TOKEN_RE = re.compile(r"\(|\)|\s(?:AND|OR|WITH)\s|[^()]+?(?=\s(?:AND|OR|WITH)\s|[()]|$)")
+
+
 def category(license: str) -> str:
     """Rough kind of licence: permissive, weak copyleft, copyleft, public domain, other or unknown.
 
-    For an expression with ``OR`` the most permissive choice counts; with ``AND`` the strictest.
+    In an expression, ``OR`` takes the most permissive choice and ``AND`` the strictest;
+    parentheses group as in SPDX, and ``WITH`` exceptions are ignored.
     """
     if not license.strip():
         return UNKNOWN
-    order = [PUBLIC_DOMAIN, PERMISSIVE, WEAK_COPYLEFT, COPYLEFT, OTHER]
-    if re.search(r"\sOR\s", license):
-        return min((category(part) for part in re.split(r"\sOR\s", license)), key=order.index)
-    if re.search(r"\sAND\s|\sWITH\s", license):
-        parts = re.split(r"\sAND\s", re.sub(r"\sWITH\s+\S+", "", license))
-        return max((category(part) for part in parts), key=order.index)
+    tokens = [t.strip() for t in _TOKEN_RE.findall(license) if t.strip()]
+    if not any(t in ("AND", "OR", "WITH", "(", ")") for t in tokens):
+        return _category_of(license)
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def take():
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def atom():
+        if peek() == "(":
+            take()
+            kind = either()
+            if peek() == ")":
+                take()
+            return kind
+        kind = _category_of(take()) if peek() not in (None, ")", "AND", "OR", "WITH") else OTHER
+        while peek() == "WITH":
+            take()
+            if peek() not in (None, ")", "AND", "OR"):
+                take()
+        return kind
+
+    def both():
+        kinds = [atom()]
+        while peek() == "AND":
+            take()
+            kinds.append(atom())
+        return max(kinds, key=_ORDER.index)
+
+    def either():
+        kinds = [both()]
+        while peek() == "OR":
+            take()
+            kinds.append(both())
+        return min(kinds, key=_ORDER.index)
+
+    return either()
+
+
+def _category_of(name: str) -> str:
     for pattern, kind in _CATEGORIES:
-        if pattern.search(license):
+        if pattern.search(name):
             return kind
     return OTHER
 

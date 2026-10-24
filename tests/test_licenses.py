@@ -26,6 +26,11 @@ def test_category():
     assert licenses.category("MIT OR GPL-2.0") == PERMISSIVE
     assert licenses.category("MIT AND GPL-2.0") == COPYLEFT
     assert licenses.category("GPL-2.0-or-later WITH Classpath-exception-2.0") == COPYLEFT
+    assert licenses.category("(MIT OR Apache-2.0) AND GPL-3.0-only") == COPYLEFT
+    assert licenses.category("GPL-3.0-only AND (MIT OR Apache-2.0)") == COPYLEFT
+    assert licenses.category("MIT OR (GPL-3.0-only AND BSD-3-Clause)") == PERMISSIVE
+    assert licenses.category("(LGPL-2.1-or-later WITH foo-exception) OR GPL-3.0") == WEAK_COPYLEFT
+    assert licenses.category("Apache Software License OR MIT License") == PERMISSIVE
 
 
 def test_resolve_prefers_expression_then_classifiers():
