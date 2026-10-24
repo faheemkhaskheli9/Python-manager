@@ -46,6 +46,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   list are shown too. The comparison refreshes when a requirements file or the environment changes.
   The Python the project asks for (`.python-version`, `requires-python`) is shown, can be set, and is
   preselected for a new environment; an environment on another Python is flagged.
+  *Check imports…* scans the project's code and lists imports no installed package provides,
+  imports from packages the requirements do not declare, and requirements the code never imports.
 - **Tools** – command-line tools installed with `uv tool` or pipx in one list, with their commands,
   Python and the latest version on PyPI. Install a tool (optionally on a chosen Python), upgrade
   one or all, or uninstall it.
@@ -88,6 +90,21 @@ python-manager          # or: python -m python_manager
 
 Requires Python 3.9+ and PySide6 (installed automatically).
 
+## Command line
+
+`python-manager-cli` uses the same data as the app and needs no display, so it works in scripts
+and CI. Add `--json` to any command for machine-readable output.
+
+```bash
+python-manager-cli pythons              # installed and system Pythons (--managed: app-installed only)
+python-manager-cli envs                 # virtual environments, broken ones flagged
+python-manager-cli check [ENV ...]      # outdated and vulnerable packages (--no-security: skip OSV)
+python-manager-cli imports [PROJECT]    # imports vs requirements (-r FILE, --python ENV)
+```
+
+`check` exits with 1 when something needs attention and 2 when a check failed; `imports` exits
+with 1 when an import is not installed or not declared.
+
 ## How it works
 
 | Feature | Implementation |
@@ -99,6 +116,7 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Rebuild | The pinned package list is read (`pip freeze`, or the metadata in site-packages when the environment's Python is gone), the old folder is moved aside, a new environment is created at the same path and the packages are installed. If that fails the old folder is put back. |
 | Compare / find | Installed packages are read from each interpreter's metadata, as on the Packages page; names are compared after PEP 503 normalisation. |
 | Package history | Name/version pairs from installed metadata, saved in `history/` in the app data folder (30 per environment). Restoring installs the pinned versions and uninstalls packages the snapshot did not have, except pip, setuptools and wheel. |
+| Import check | The project's `.py` files (hidden folders, environments, `build` and `dist` skipped) are parsed with `ast`; imports inside `try`/`except ImportError` and the project's own modules are ignored. Modules are matched to packages with `top_level.txt` or `RECORD` inside the environment, and the standard library with `sys.stdlib_module_names`. |
 | Package sizes | The sizes of the files each package's `RECORD` lists, read inside the environment; packages without a file list show no size. |
 | Name autocomplete | PyPI's JSON simple index (`https://pypi.org/simple/`), cached in the app data folder and refreshed weekly. |
 | Security check | Installed name/version pairs are sent to the OSV batch API (`api.osv.dev`); nothing else leaves the machine. |
@@ -130,7 +148,9 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, licenses, sizes, compare, history, health, disk, tools, conda, kernels, logs
+          # lock, security, licenses, sizes, compare, history, imports, health, disk, tools, conda,
+          # kernels, logs
+  cli.py  # python-manager-cli
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core plus offscreen UI smoke tests
 ```

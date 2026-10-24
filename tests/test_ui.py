@@ -239,3 +239,18 @@ def test_history_dialog_restores(app, monkeypatch):
     dialog.restore()
     wait_until(app, lambda: dialog.changed)
     assert restored and restored[0].action == "Upgrading requests"
+
+
+def test_imports_dialog(app):
+    from python_manager.core import imports
+    from python_manager.core.imports import ImportCheck
+    from python_manager.ui.imports_dialog import ImportsDialog
+
+    checks = [ImportCheck("yaml", imports.NOT_INSTALLED, "main.py"),
+              ImportCheck("urllib3", imports.NOT_DECLARED, "urllib3"),
+              ImportCheck("pytest", imports.NOT_IMPORTED, "_pytest, pytest")]
+    dialog = ImportsDialog(checks, [], "proj", "requirements.txt")
+    assert dialog.table.rowCount() == 3
+    assert dialog.table.item(0, 2).text() == "First imported in: main.py"
+    assert "1 imported module(s) not installed" in dialog.summary.text()
+    assert "requirements.txt" in ImportsDialog([], [], "proj", "requirements.txt").summary.text()

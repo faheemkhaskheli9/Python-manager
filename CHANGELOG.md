@@ -10,6 +10,11 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Import check: *Check imports…* on the Projects page lists imports no installed package provides,
+  imports the requirements do not declare and requirements the code never imports. ([#13])
+- Command line: `python-manager-cli` lists Pythons and environments, checks environments for
+  outdated and vulnerable packages and checks a project's imports, with JSON output and exit
+  codes for CI. ([#13])
 - Package history: a snapshot of the packages is saved before each change made from the Packages page,
   *Update all* or *Compare…*; *History…* on the Packages page lists them and restores one. ([#12])
 - Compare: *Compare…* on the Packages page shows two interpreters' or environments' packages side by
@@ -163,5 +168,6 @@ First version. These changes were committed directly to `main`, before pull requ
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
+[#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
