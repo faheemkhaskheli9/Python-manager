@@ -1,4 +1,5 @@
-"""Export an environment: pinned requirements files (optionally with hashes), pylock.toml and pyproject.toml."""
+"""Export an environment: pinned requirements files (optionally with hashes), pylock.toml, pyproject.toml
+and a CycloneDX SBOM."""
 
 from __future__ import annotations
 
@@ -6,12 +7,14 @@ import json
 import time
 import urllib.error
 import urllib.parse
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import deps, net, projectfile
+from .. import __version__
+from . import deps, licenses, net, projectfile
 from .tasks import NULL, TaskContext
 
 PYPI_RELEASE = "https://pypi.org/pypi/{name}/{version}/json"
@@ -37,7 +40,10 @@ PYLOCK = Format("pylock", "pylock.toml — lock file (PEP 751)",
                 "Exact versions with file URLs and hashes; installable with uv or pip.", "pylock.toml", True)
 PYPROJECT = Format("pyproject", "pyproject.toml — top-level dependencies",
                    "A minimal project listing the top-level packages as minimum versions.", "pyproject.toml")
-FORMATS = (PINNED, TOP_LEVEL, HASHES, PYLOCK, PYPROJECT)
+SBOM = Format("sbom", "sbom.cdx.json — CycloneDX SBOM",
+              "Every package with its version, purl, licence and dependencies, as a CycloneDX 1.6 JSON SBOM.",
+              "sbom.cdx.json", True)
+FORMATS = (PINNED, TOP_LEVEL, HASHES, PYLOCK, PYPROJECT, SBOM)
 
 
 @dataclass(frozen=True)
@@ -140,6 +146,58 @@ def pylock(dists: list[deps.Dist], files: dict[str, list[File]], python_version:
     return "".join(out)
 
 
+def purl(name: str, version: str) -> str:
+    """Package URL of a PyPI release: normalised name, percent-encoded version."""
+    return f"pkg:pypi/{deps.normalize(name)}@{urllib.parse.quote(version, safe='.-_~!')}"
+
+
+def _license_entry(item: licenses.PackageLicense) -> list[dict]:
+    if not item.license:
+        return []
+    if item.source == "License-Expression":
+        return [{"expression": item.license}]
+    return [{"license": {"name": item.license}}]
+
+
+def cyclonedx(dists: list[deps.Dist], files: dict[str, list[File]], found_licenses: dict[str, licenses.PackageLicense],
+              env_name: str, python_version: str) -> str:
+    """A CycloneDX 1.6 JSON SBOM of these releases; PyPI file hashes are added where ``files`` has them."""
+    refs = {deps.normalize(d.name): purl(d.name, d.version) for d in dists}
+    components = []
+    for dist in dists:
+        key = deps.normalize(dist.name)
+        component = {"type": "library", "bom-ref": refs[key], "name": dist.name, "version": dist.version,
+                     "purl": refs[key]}
+        license = found_licenses.get(key)
+        if license and _license_entry(license):
+            component["licenses"] = _license_entry(license)
+        if files.get(key):
+            component["externalReferences"] = [
+                {"type": "distribution", "url": f.url, "hashes": [{"alg": "SHA-256", "content": f.sha256}]}
+                for f in files[key]]
+        components.append(component)
+    root = f"{env_name} (Python {python_version})"
+    top = [refs[k] for k in sorted(refs) if not any(k in d.requires for d in dists)]
+    dependencies = [{"ref": root, "dependsOn": top}]
+    dependencies += [{"ref": refs[deps.normalize(d.name)],
+                      "dependsOn": [refs[r] for r in sorted(d.requires) if r in refs]} for d in dists]
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "serialNumber": f"urn:uuid:{uuid.uuid4()}",
+        "version": 1,
+        "metadata": {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "tools": {"components": [{"type": "application", "name": "python-manager", "version": __version__}]},
+            "component": {"type": "application", "bom-ref": root, "name": env_name,
+                          "properties": [{"name": "python:version", "value": python_version}]},
+        },
+        "components": components,
+        "dependencies": dependencies,
+    }
+    return json.dumps(bom, indent=2) + "\n"
+
+
 def export(python: Path, fmt: Format, path: Path, env_name: str, python_version: str,
            ctx: TaskContext = NULL, exclude_tools: bool = True) -> Result:
     """Write the environment's packages at ``python`` to ``path`` in format ``fmt``."""
@@ -165,6 +223,13 @@ def export(python: Path, fmt: Format, path: Path, env_name: str, python_version:
     dists = sorted((d for k, d in graph.items() if k not in skip), key=lambda d: d.name.lower())
     ctx.log(f"Fetching file hashes of {len(dists)} packages from PyPI")
     files, missing = fetch_files(dists, ctx)
+    if fmt is SBOM:
+        ctx.log("Reading licences")
+        found = {deps.normalize(i.name): i for i in licenses.scan(python)}
+        path.write_text(cyclonedx(dists, files, found, env_name, python_version), encoding="utf-8")
+        for spec in missing:
+            ctx.log(f"Not on PyPI, no hashes: {spec}")
+        return Result(path, len(dists), [])
     header = _header(env_name, python_version)
     text = pylock(dists, files, python_version, header) if fmt is PYLOCK else hashed_requirements(dists, files, header)
     path.write_text(text, encoding="utf-8")
