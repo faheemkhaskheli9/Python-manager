@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core import eol
 from . import theme
 
 
@@ -35,6 +36,15 @@ def make_table(headers: Sequence[str], stretch: int = -1, multi: bool = False) -
     header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(stretch if stretch >= 0 else len(headers) - 1, QHeaderView.ResizeMode.Stretch)
     return table
+
+
+def paint_support(cell: Optional[QTableWidgetItem]) -> None:
+    """Colour a cell showing an :mod:`eol` label: red past end of life, orange when it ends soon."""
+    text = cell.text() if cell else ""
+    if text.startswith(eol.END_OF_LIFE):
+        theme.paint(cell, "error")
+    elif text.startswith(eol.ENDS_SOON):
+        theme.paint(cell, "warning")
 
 
 class SortedItem(QTableWidgetItem):

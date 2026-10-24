@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NoReturn, Optional, Sequence
 
 from . import __version__
-from .core import health, imports, interpreters, projects, python_versions, venvs
+from .core import eol, health, imports, interpreters, licenses, lock, projects, python_versions, venvs
 from .core.tasks import TaskContext
 
 
@@ -26,10 +26,22 @@ def _emit(args: argparse.Namespace, data: list[dict], rows: list[Sequence[str]])
         _print_rows(rows)
 
 
+def _support(version: str) -> dict:
+    support = eol.support(version)
+    return {"support": support.status if support else None,
+            "end_of_support": support.end.isoformat() if support and support.end else None}
+
+
+def _support_label(version: str) -> str:
+    support = eol.support(version)
+    return support.label if support and support.needs_attention else ""
+
+
 def cmd_pythons(args: argparse.Namespace) -> int:
     found = python_versions.list_installed() + ([] if args.managed else interpreters.find_system_pythons())
-    data = [{"name": i.name, "version": i.version, "kind": i.kind, "executable": str(i.executable)} for i in found]
-    _emit(args, data, [(d["version"], d["kind"], d["executable"]) for d in data])
+    data = [{"name": i.name, "version": i.version, "kind": i.kind, "executable": str(i.executable),
+             **_support(i.version)} for i in found]
+    _emit(args, data, [(d["version"], d["kind"], _support_label(d["version"]), d["executable"]) for d in data])
     return 0
 
 
@@ -37,8 +49,9 @@ def cmd_envs(args: argparse.Namespace) -> int:
     data = []
     for env in venvs.list_envs():
         data.append({"name": env.name, "version": env.version, "path": str(env.path),
-                     "managed": env.managed, "broken": venvs.is_broken(env)})
-    _emit(args, data, [(d["name"], d["version"], "broken" if d["broken"] else "", d["path"]) for d in data])
+                     "managed": env.managed, "broken": venvs.is_broken(env), **_support(env.version)})
+    _emit(args, data, [(d["name"], d["version"], "broken" if d["broken"] else _support_label(d["version"]),
+                        d["path"]) for d in data])
     return 0
 
 
@@ -48,17 +61,32 @@ def _fail(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
-def _resolve(target: str) -> Path:
-    """An interpreter path, an environment folder or the name of a listed environment."""
+def _find(target: str) -> tuple[Path, str]:
+    """The interpreter and a display name for an interpreter path, environment folder or environment name."""
     path = Path(target)
     if path.is_dir() and venvs.is_venv(path):
-        return venvs.load(path, managed=False).executable
+        env = venvs.load(path.resolve(), managed=False)
+        return env.executable, env.name
     if path.is_file():
-        return path
+        return path, str(path)
     for env in venvs.list_envs():
         if env.name == target:
-            return env.executable
+            return env.executable, env.name
     _fail(f"{target!r} is not an interpreter, environment folder or environment name")
+
+
+def _resolve(target: str) -> Path:
+    return _find(target)[0]
+
+
+def _target(target: Optional[str]) -> tuple[Path, str]:
+    """``target``, or the current folder's environment (.venv, venv, env) when none is given."""
+    if target:
+        return _find(target)
+    env = projects.Project(Path.cwd()).env()
+    if env is None:
+        _fail("the current folder has no .venv, venv or env; name an environment or interpreter")
+    return env.executable, env.name
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -117,6 +145,55 @@ def cmd_imports(args: argparse.Namespace) -> int:
     return 1 if any(c.status != imports.NOT_IMPORTED for c in checks) else 0
 
 
+FAIL_CATEGORIES = {c.lower().replace(" ", "-"): c for c in
+                   (licenses.COPYLEFT, licenses.WEAK_COPYLEFT, licenses.OTHER, licenses.UNKNOWN)}
+
+
+def cmd_licenses(args: argparse.Namespace) -> int:
+    fail_on = set()
+    for name in filter(None, (args.fail_on or "").split(",")):
+        if name.strip().lower() not in FAIL_CATEGORIES:
+            _fail(f"unknown category {name!r}; use {', '.join(FAIL_CATEGORIES)}")
+        fail_on.add(FAIL_CATEGORIES[name.strip().lower()])
+    python, name = _target(args.target)
+    try:
+        items = licenses.scan(python)
+    except Exception as exc:
+        _fail(f"could not read the packages of {name}: {exc}")
+    if args.json or args.format == "json":
+        print(licenses.to_json(items), end="")
+    elif args.format == "csv":
+        print(licenses.to_csv(items), end="")
+    elif args.format == "markdown":
+        print(licenses.to_markdown(items, f"Licenses · {name}"), end="")
+    else:
+        _print_rows([(i.name, i.version, i.category, i.license or "—") for i in items])
+    flagged = [i for i in items if i.category in fail_on]
+    for item in flagged:
+        print(f"{item.category}: {item.name} {item.version} ({item.license or 'no licence'})", file=sys.stderr)
+    return 1 if flagged else 0
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    fmt = next(f for f in lock.FORMATS if f.key == args.format)
+    python, name = _target(args.target)
+    info = interpreters.probe(python)
+    if info is None:
+        _fail(f"{python} is not a working Python")
+    output = Path(args.output or fmt.filename)
+    ctx = TaskContext(log=lambda m: print(m, file=sys.stderr))
+    try:
+        result = lock.export(python, fmt, output, name, info["version"], ctx, exclude_tools=not args.include_tools)
+    except Exception as exc:
+        _fail(f"export failed: {exc}")
+    if args.json:
+        print(json.dumps({"path": str(result.path), "packages": result.packages, "skipped": result.skipped},
+                         indent=2))
+    else:
+        print(f"Saved {result.packages} packages to {result.path}.")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="python-manager-cli", description="Python Manager from the command line.")
     root.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -141,6 +218,20 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("project", nargs="?", default=".", help="project folder (default: current folder)")
     p.add_argument("-r", "--requirements", help="requirements file (default: the first the project has)")
     p.add_argument("--python", help="interpreter or environment (default: the project's environment)")
+    p = command("licenses", cmd_licenses, "List the licence of each installed package. "
+                                          "Exits 1 when a package is in a --fail-on category.")
+    p.add_argument("target", nargs="?", help="interpreter, environment folder or name "
+                                             "(default: the current folder's environment)")
+    p.add_argument("--format", choices=["table", "csv", "markdown", "json"], default="table")
+    p.add_argument("--fail-on", metavar="CATEGORIES",
+                   help=f"comma-separated categories that fail the check: {', '.join(FAIL_CATEGORIES)}")
+    p = command("export", cmd_export, "Save an environment's packages as requirements, a lock file or pyproject.")
+    p.add_argument("target", nargs="?", help="interpreter, environment folder or name "
+                                             "(default: the current folder's environment)")
+    p.add_argument("--format", choices=[f.key for f in lock.FORMATS], default=lock.PINNED.key,
+                   help="; ".join(f"{f.key}: {f.label}" for f in lock.FORMATS))
+    p.add_argument("-o", "--output", help="file to write (default: the format's usual name in this folder)")
+    p.add_argument("--include-tools", action="store_true", help="keep pip, setuptools and wheel")
     return root
 
 

@@ -16,14 +16,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..core import config, paths, python_versions, venvs
+from ..core import config, eol, paths, python_versions, venvs
 from ..core.interpreters import MANAGED, Interpreter
 from ..core.python_versions import RemotePython
 from ..core.venvs import VirtualEnv
 from . import theme
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
+from .widgets import (button, button_row, fill_table, loading_overlay, make_table, open_folder, paint_support,
+                      selected_payload)
 
 
 class PythonsPage(QWidget):
@@ -35,7 +36,7 @@ class PythonsPage(QWidget):
         self._loaded_once = False
 
         # Installed interpreters
-        self.installed = make_table(["Name", "Version", "Type", "Update", "Location"])
+        self.installed = make_table(["Name", "Version", "Type", "Update", "Support", "Location"])
         self.installed.itemSelectionChanged.connect(self._update_buttons)
         self.installed_overlay = loading_overlay(self.installed)
         self.uninstall_btn = button("Uninstall", self.uninstall)
@@ -109,13 +110,16 @@ class PythonsPage(QWidget):
         rows = []
         for i in interpreters:
             update = self._updates.get(i.name)
+            support = eol.support(i.version)
             rows.append((i, (i.name, i.version, "Managed" if i.kind == MANAGED else "System",
-                             update.version if update else "", str(i.executable))))
+                             update.version if update else "", support.label if support else "",
+                             str(i.executable))))
         fill_table(self.installed, rows)
         for row in range(self.installed.rowCount()):
             cell = self.installed.item(row, 3)
             if cell.text():
                 theme.paint(cell, "warning")
+            paint_support(self.installed.item(row, 4))
         self._render_available()
 
     def _dependents(self, interp: Interpreter) -> list[VirtualEnv]:

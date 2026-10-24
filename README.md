@@ -5,7 +5,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Python versions** – browse, download, install and uninstall any CPython version
   (including pre-releases and free-threaded builds). Existing system Pythons are detected too.
   Installed Pythons with a newer patch release are flagged and updated in one click, and the
-  environments on the old one can be rebuilt on the new one right away.
+  environments on the old one can be rebuilt on the new one right away. A *Support* column shows
+  which Pythons and environments are past end of life or will be within six months.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from wheel/sdist/`requirements.txt`,
   check for updates and export the environment. A *Size* column shows the disk space of each
@@ -97,13 +98,18 @@ and CI. Add `--json` to any command for machine-readable output.
 
 ```bash
 python-manager-cli pythons              # installed and system Pythons (--managed: app-installed only)
-python-manager-cli envs                 # virtual environments, broken ones flagged
+python-manager-cli envs                 # virtual environments, broken and end-of-life ones flagged
 python-manager-cli check [ENV ...]      # outdated and vulnerable packages (--no-security: skip OSV)
 python-manager-cli imports [PROJECT]    # imports vs requirements (-r FILE, --python ENV)
+python-manager-cli licenses [ENV]       # licence of each package (--format csv|markdown|json,
+                                        #   --fail-on copyleft,weak-copyleft,other,unknown)
+python-manager-cli export [ENV]         # save the packages (--format pinned|top|hashes|pylock|pyproject, -o FILE)
 ```
 
-`check` exits with 1 when something needs attention and 2 when a check failed; `imports` exits
-with 1 when an import is not installed or not declared.
+`ENV` is an interpreter, an environment folder or an environment's name; `licenses` and `export`
+default to the current folder's `.venv`, `venv` or `env`. `check` exits with 1 when something
+needs attention and 2 when a check failed; `imports` exits with 1 when an import is not installed
+or not declared; `licenses` exits with 1 when a package is in a `--fail-on` category.
 
 ## How it works
 
@@ -112,6 +118,7 @@ with 1 when an import is not installed or not declared.
 | Python downloads | Relocatable CPython builds from [python-build-standalone](https://github.com/astral-sh/python-build-standalone), verified with SHA-256 and extracted into the app data folder. Uninstall removes that folder. No admin rights needed. |
 | Packages | `uv pip … --python <interpreter>` when uv is available, otherwise the interpreter's own `pip`; version details come from the PyPI JSON API. Downloads always use pip. |
 | Package index | The index settings are passed to every pip, uv and pipx command as `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST` and their `UV_*` equivalents. Version details and autocomplete still come from PyPI. |
+| End of life | A built-in table of each CPython minor version's end of security support (from the [Python developer guide](https://devguide.python.org/versions/)); nothing is looked up online. Versions newer than the table count as supported. |
 | Python updates | An installed Python is flagged when the build list has a newer patch release of the same minor version and variant. The update is installed next to it; environments keep using the old one until they are rebuilt on the new one. |
 | Rebuild | The pinned package list is read (`pip freeze`, or the metadata in site-packages when the environment's Python is gone), the old folder is moved aside, a new environment is created at the same path and the packages are installed. If that fails the old folder is put back. |
 | Compare / find | Installed packages are read from each interpreter's metadata, as on the Packages page; names are compared after PEP 503 normalisation. |
@@ -149,7 +156,7 @@ when listing many releases.
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
           # lock, security, licenses, sizes, compare, history, imports, health, disk, tools, conda,
-          # kernels, logs
+          # kernels, eol, logs
   cli.py  # python-manager-cli
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core plus offscreen UI smoke tests
