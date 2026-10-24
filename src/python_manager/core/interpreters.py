@@ -18,6 +18,7 @@ from .tasks import capture
 MANAGED = "managed"
 SYSTEM = "system"
 VENV = "venv"
+CONDA = "conda"
 
 _PROBE = (
     "import json,sys,platform;"
@@ -38,7 +39,7 @@ class Interpreter:
 
     @property
     def label(self) -> str:
-        kind = {MANAGED: "managed", SYSTEM: "system", VENV: "venv"}.get(self.kind, self.kind)
+        kind = {MANAGED: "managed", SYSTEM: "system", VENV: "venv", CONDA: "conda, read-only"}.get(self.kind, self.kind)
         return f"{self.name}  —  Python {self.version} ({kind})"
 
 

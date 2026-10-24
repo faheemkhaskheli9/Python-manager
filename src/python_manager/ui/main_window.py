@@ -24,6 +24,7 @@ from .packages_page import PackagesPage
 from .projects_page import ProjectsPage
 from .pythons_page import PythonsPage
 from .settings_dialog import SettingsDialog
+from .tools_page import ToolsPage
 from .state import AppState
 from .tasks import TaskManager
 from .venvs_page import VenvsPage
@@ -43,13 +44,14 @@ class MainWindow(QMainWindow):
         self.packages = PackagesPage(self.state, self.tasks)
         self.venvs = VenvsPage(self.state, self.tasks, self.show_packages_for)
         self.projects = ProjectsPage(self.state, self.tasks, self.show_packages_for)
+        self.tools = ToolsPage(self.state, self.tasks)
         self.disk = DiskPage(self.state, self.tasks)
 
         self.stack = QStackedWidget()
         self.nav = QListWidget()
         for title, page in (("Python Versions", self.pythons), ("Packages", self.packages),
                             ("Virtual Environments", self.venvs), ("Projects", self.projects),
-                            ("Disk Usage", self.disk)):
+                            ("Tools", self.tools), ("Disk Usage", self.disk)):
             self.nav.addItem(title)
             self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)

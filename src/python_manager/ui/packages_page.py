@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import deps, favorites, packages, pypi_names, security
-from ..core.interpreters import Interpreter
+from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
@@ -71,6 +71,10 @@ class PackagesPage(QWidget):
         bar.addWidget(button("Install pip", self.ensure_pip))
         bar.addStretch(1)
         self.pip_bar.hide()
+        self.conda_bar = QLabel("Conda environment: packages are shown read-only. "
+                                "Change them with conda, mamba or micromamba.")
+        self.conda_bar.setWordWrap(True)
+        self.conda_bar.hide()
 
         # Installed packages
         self.filter = QLineEdit(placeholderText="Filter installed packages")
@@ -163,6 +167,7 @@ class PackagesPage(QWidget):
         root = QVBoxLayout(self)
         root.addLayout(top)
         root.addWidget(self.pip_bar)
+        root.addWidget(self.conda_bar)
         root.addWidget(splitter, 1)
 
         state.changed.connect(self._fill_targets)
@@ -212,6 +217,17 @@ class PackagesPage(QWidget):
     def python(self) -> Optional[Interpreter]:
         return self.target.currentData()
 
+    @property
+    def read_only(self) -> bool:
+        """Conda environments are inspected here but changed with conda, which pip would bypass."""
+        return bool(self.python and self.python.kind == CONDA)
+
+    def _refuse_read_only(self) -> bool:
+        if self.read_only:
+            QMessageBox.information(self, "Read-only", "Packages of conda environments are changed with conda, "
+                                                       "mamba or micromamba, not here.")
+        return self.read_only
+
     # Installed packages ----------------------------------------------------
 
     def reload(self) -> None:
@@ -219,6 +235,7 @@ class PackagesPage(QWidget):
         self._packages, self._latest, self._graph, self._required_by = [], {}, {}, {}
         self._vulns = []
         self.pip_bar.hide()
+        self.conda_bar.setVisible(self.read_only)
         self._render()
         if interp is None:
             self.overlay.stop()
@@ -239,14 +256,14 @@ class PackagesPage(QWidget):
             if report:  # results of the last scheduled check that still apply
                 report = report.current(self._packages)
                 self._latest, self._vulns = dict(report.outdated), list(report.vulns)
-            self.pip_bar.setVisible(not has_pip)
+            self.pip_bar.setVisible(not has_pip and not self.read_only)
             self._render()
 
         def failed(message):
             if generation != self._generation:
                 return
             self.overlay.stop()
-            if "pip is not installed" in message:
+            if "pip is not installed" in message and not self.read_only:
                 self.pip_bar.show()
                 self.status.setText("pip is not installed.")
             else:
@@ -302,8 +319,8 @@ class PackagesPage(QWidget):
 
     def _update_buttons(self) -> None:
         has = bool(self.table.selectionModel().selectedRows())
-        self.uninstall_btn.setEnabled(has)
-        self.upgrade_btn.setEnabled(has)
+        self.uninstall_btn.setEnabled(has and not self.read_only)
+        self.upgrade_btn.setEnabled(has and not self.read_only)
         self.favorite_btn.setEnabled(has)
         self.deps_btn.setEnabled(len(self.table.selectionModel().selectedRows()) == 1 and bool(self._graph))
 
@@ -312,6 +329,8 @@ class PackagesPage(QWidget):
         interp = self.python
         if interp is None:
             QMessageBox.information(self, "No environment", "Select an interpreter or environment first.")
+            return
+        if self._refuse_read_only():
             return
         self.tasks.run(f"{title} ({interp.name})", lambda ctx: fn(interp.executable, ctx),
                        lambda _: self.reload())
@@ -349,7 +368,7 @@ class PackagesPage(QWidget):
 
     def upgrade_all(self) -> None:
         interp = self.python
-        if interp is not None:
+        if interp is not None and not self._refuse_read_only():
             update_all(self, self.state, self.tasks, interp.executable, interp.name, self.reload, self.overlay)
 
     def check_updates(self) -> None:
