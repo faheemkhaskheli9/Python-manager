@@ -1,10 +1,11 @@
+import json
 import sys
 import urllib.error
 from pathlib import Path
 
 import pytest
 
-from python_manager.core import deps, lock
+from python_manager.core import deps, licenses, lock
 
 try:
     import tomllib
@@ -70,3 +71,30 @@ def test_top_level(fake_env, tmp_path):
 def test_release_files_not_found(fake_env):
     with pytest.raises(LookupError):
         lock.release_files("local_pkg", "0.1")
+
+
+def test_sbom(fake_env, tmp_path, monkeypatch):
+    found = [licenses.PackageLicense("requests", "2.32.3", "Apache-2.0", "License-Expression", ()),
+             licenses.PackageLicense("idna", "3.10", "BSD", "classifier", ())]
+    monkeypatch.setattr(lock.licenses, "scan", lambda python: found)
+    result = lock.export(Path(sys.executable), lock.SBOM, tmp_path / "sbom.cdx.json", "demo", "3.12.4")
+    bom = json.loads(result.path.read_text())
+    assert result.packages == 3 and result.skipped == []
+    assert bom["bomFormat"] == "CycloneDX" and bom["specVersion"] == "1.6"
+    assert bom["serialNumber"].startswith("urn:uuid:")
+    by_name = {c["name"]: c for c in bom["components"]}
+    assert set(by_name) == {"idna", "local_pkg", "requests"}
+    requests = by_name["requests"]
+    assert requests["purl"] == "pkg:pypi/requests@2.32.3"
+    assert requests["licenses"] == [{"expression": "Apache-2.0"}]
+    assert {r["hashes"][0]["content"] for r in requests["externalReferences"]} == {"a" * 64, "b" * 64}
+    assert by_name["idna"]["licenses"] == [{"license": {"name": "BSD"}}]
+    local = by_name["local_pkg"]
+    assert local["purl"] == "pkg:pypi/local-pkg@0.1" and "externalReferences" not in local and "licenses" not in local
+    deps_of = {d["ref"]: d["dependsOn"] for d in bom["dependencies"]}
+    assert deps_of["pkg:pypi/requests@2.32.3"] == ["pkg:pypi/idna@3.10"]
+    assert deps_of["demo (Python 3.12.4)"] == ["pkg:pypi/local-pkg@0.1", "pkg:pypi/requests@2.32.3"]
+
+
+def test_purl_encodes_version():
+    assert lock.purl("Foo_Bar", "1.0+local") == "pkg:pypi/foo-bar@1.0%2Blocal"

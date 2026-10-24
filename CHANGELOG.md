@@ -10,6 +10,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- SBOM export: the Export dialog and `python-manager-cli export --format sbom` save an environment
+  as a CycloneDX 1.6 JSON SBOM with each package's version, purl, licence, dependencies and the
+  hashes of its PyPI files. ([#21])
 - Projects: when no installed Python fits a project's `.python-version` or `requires-python`,
   *Create environment…* offers to download and install the newest matching Python and creates the
   environment on it. ([#20])
@@ -179,6 +182,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
 [#19]: https://github.com/faheemkhaskheli9/python-manager/pull/19
 [#20]: https://github.com/faheemkhaskheli9/python-manager/pull/20
+[#21]: https://github.com/faheemkhaskheli9/python-manager/pull/21
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

@@ -23,7 +23,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   Untick what to keep, update the rest, and see what changed plus any broken requirements.
 - **Export / lock** – save any environment as `requirements.txt` (all packages or top-level only,
   pinned), `requirements.txt` with hashes, a [PEP 751](https://peps.python.org/pep-0751/)
-  `pylock.toml` lock file, or `pyproject.toml`. From the Projects page the file is saved into the
+  `pylock.toml` lock file, `pyproject.toml`, or a [CycloneDX](https://cyclonedx.org) JSON SBOM with
+  each package's purl, licence, dependencies and PyPI file hashes. From the Projects page the file is saved into the
   project folder.
 - **Security check** – look up known vulnerabilities in the installed packages in the
   [OSV database](https://osv.dev), see severity and fixed versions, and upgrade to fixed versions.
@@ -105,7 +106,7 @@ python-manager-cli check [ENV ...]      # outdated and vulnerable packages (--no
 python-manager-cli imports [PROJECT]    # imports vs requirements (-r FILE, --python ENV)
 python-manager-cli licenses [ENV]       # licence of each package (--format csv|markdown|json,
                                         #   --fail-on copyleft,weak-copyleft,other,unknown)
-python-manager-cli export [ENV]         # save the packages (--format pinned|top|hashes|pylock|pyproject, -o FILE)
+python-manager-cli export [ENV]         # save the packages (--format pinned|top|hashes|pylock|pyproject|sbom, -o FILE)
 ```
 
 `ENV` is an interpreter, an environment folder or an environment's name; `licenses` and `export`
@@ -134,7 +135,7 @@ or not declared; `licenses` exits with 1 when a package is in a `--fail-on` cate
 | Projects | Requirements are read from `requirements.txt` (following `-r` includes) or `pyproject.toml` and compared with the environment's installed metadata; markers are evaluated for the environment's Python. |
 | Scheduled checks | `pip list --outdated` plus the security check for each environment and app-installed Python, at most once a day; results are cached in `cache/health.json`. |
 | Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
-| Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. |
+| Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. The SBOM (CycloneDX 1.6) adds licences from installed metadata and keeps packages not on PyPI, without hashes. |
 | Tools | `uv tool list --show-paths` and `pipx list --json`; install, upgrade and uninstall run the same manager's commands. Latest versions come from the PyPI JSON API. |
 | Jupyter kernels | Kernel specs are read from Jupyter's `JUPYTER_PATH`, user and system data folders, in that order; adding one runs `python -m ipykernel install --user` in the environment, removing one deletes its folder. |
 | Licenses | Read from installed metadata inside the environment: `License-Expression` (PEP 639) first, then `License ::` classifiers, then the `License` field. Nothing is sent over the network. |
