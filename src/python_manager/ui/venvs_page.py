@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from ..core import conda, config, favorites, kernels, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
+from .find_dialog import FindPackageDialog
 from .kernels_dialog import KernelsDialog
 from .state import AppState
 from .tasks import TaskManager
@@ -160,6 +161,8 @@ class VenvsPage(QWidget):
                                     button("Create from file…", self._create_from_file,
                                            "New environment from a requirements.txt or pyproject.toml"),
                                     button("Add existing…", self._add_existing),
+                                    button("Find package…", self._find_package,
+                                           "Which interpreters and environments have a package"),
                                     button("Jupyter kernels…", self._kernels_dialog,
                                            "All installed kernels; remove the ones whose Python is gone"),
                                     button("Refresh", lambda: self.state.refresh())))
@@ -340,6 +343,9 @@ class VenvsPage(QWidget):
         self.tasks.run(f"Adding a Jupyter kernel for {env.name}",
                        lambda ctx: kernels.register(env.executable, name, display.strip(), ctx),
                        lambda _: self._render())
+
+    def _find_package(self) -> None:
+        FindPackageDialog(self.state.interpreters(), self.tasks, self.manage_packages, self).exec()
 
     def _kernels_dialog(self) -> None:
         KernelsDialog(self.tasks, self).exec()

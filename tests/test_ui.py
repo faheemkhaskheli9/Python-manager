@@ -177,3 +177,42 @@ def test_python_update_rebuilds_dependents(app, monkeypatch):
     assert rebuilt == [("a", installed.executable)]
     kind, (title, text) = app.shown_messages[-1]
     assert kind == "warning" and "b" in text.split("\n")[-1]
+
+
+def test_compare_and_find_dialogs(app, monkeypatch):
+    from pathlib import Path
+
+    from python_manager.core import packages
+    from python_manager.core.interpreters import VENV, Interpreter
+    from python_manager.core.packages import Package
+    from python_manager.ui.compare_dialog import CompareDialog
+    from python_manager.ui.find_dialog import FindPackageDialog
+    from python_manager.ui.tasks import TaskManager
+
+    a = Interpreter(Path("/envs/a/bin/python"), "3.12.1", VENV, "a")
+    b = Interpreter(Path("/envs/b/bin/python"), "3.12.1", VENV, "b")
+    contents = {a.executable: [Package("requests", "2.32.0"), Package("idna", "3.7")],
+                b.executable: [Package("requests", "2.31.0"), Package("idna", "3.7")]}
+    monkeypatch.setattr(packages, "installed", lambda python: contents[python])
+    installs = []
+    monkeypatch.setattr(packages, "install", lambda python, specs, ctx: installs.append((python, specs)))
+    window = QtWidgets.QWidget()
+    tasks = TaskManager(window)
+
+    dialog = CompareDialog([a, b], tasks, left=a)
+    wait_until(app, lambda: dialog.rows)
+    assert dialog.table.rowCount() == 1 and dialog.table.item(0, 3).text() == "Different"
+    dialog.hide_same.setChecked(False)
+    assert dialog.table.rowCount() == 2
+    dialog.match_left()
+    wait_until(app, lambda: dialog.changed)
+    assert installs == [(b.executable, ["requests==2.32.0"])]
+
+    managed = []
+    finder = FindPackageDialog([a, b], tasks, managed.append)
+    finder.pattern.setText("req*")
+    finder.search()
+    wait_until(app, lambda: finder.table.rowCount() == 2)
+    finder.table.selectRow(0)
+    finder._manage()
+    assert managed and managed[0] in contents

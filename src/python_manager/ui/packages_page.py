@@ -30,6 +30,7 @@ from ..core import deps, favorites, licenses, packages, pypi_names, security, si
 from ..core.disk import format_size
 from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
+from .compare_dialog import CompareDialog
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
 from .licenses_dialog import LicensesDialog
@@ -113,7 +114,9 @@ class PackagesPage(QWidget):
                                  button("Export…", self.export_requirements,
                                         "Save as requirements.txt, pylock.toml or pyproject.toml"),
                                  button("Licenses…", self.show_licenses,
-                                        "List each package's licence and save a report")))
+                                        "List each package's licence and save a report"),
+                                 button("Compare…", self.compare,
+                                        "Compare the packages with another interpreter or environment")))
 
         # Install / download panel
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
@@ -454,6 +457,16 @@ class PackagesPage(QWidget):
         if self.tasks.run(f"Reading licences ({interp.name})", lambda _: licenses.scan(interp.executable), done,
                           self._failed("Licenses")):
             self.overlay.start("Reading package licences…")
+
+    def compare(self) -> None:
+        interpreters = self.state.interpreters()
+        if len(interpreters) < 2:
+            QMessageBox.information(self, "Compare", "There is only one interpreter to compare.")
+            return
+        dialog = CompareDialog(interpreters, self.tasks, self, self.python)
+        dialog.exec()
+        if dialog.changed:
+            self.reload()
 
     def _failed(self, title: str):
         """Error handler for a task shown with the overlay: hide it and report the error."""
