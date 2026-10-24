@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from PySide6.QtWidgets import (
     QCheckBox,
     QGroupBox,
@@ -121,8 +119,8 @@ class PythonsPage(QWidget):
         self._render_available()
 
     def _dependents(self, interp: Interpreter) -> list[VirtualEnv]:
-        root = os.path.realpath(paths.pythons_dir() / interp.name)
-        return [e for e in self.state.envs if e.base and os.path.realpath(e.base).startswith(root)]
+        root = paths.pythons_dir() / interp.name
+        return [e for e in self.state.envs if venvs.created_from(e, root)]
 
     def install_update(self) -> None:
         interp: Interpreter = selected_payload(self.installed)

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import compare, packages
+from ..core import compare, history, packages
 from ..core.interpreters import CONDA, Interpreter
 from .tasks import TaskManager
 from .widgets import color_rows, fill_table, loading_overlay, make_table
@@ -128,5 +128,8 @@ class CompareDialog(QDialog):
             self.changed = True
             self.load()
 
-        self.tasks.run(f"Installing {len(specs)} packages into {right.name}",
-                       lambda ctx: packages.install(right.executable, specs, ctx), done)
+        def install(ctx) -> None:
+            history.snapshot(right.executable, f"Installing {self.left.currentData().name}'s versions")
+            packages.install(right.executable, specs, ctx)
+
+        self.tasks.run(f"Installing {len(specs)} packages into {right.name}", install, done)

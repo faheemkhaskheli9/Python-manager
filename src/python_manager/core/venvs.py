@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, deps, packages, paths, projectfile
+from . import config, deps, kernels, packages, paths, projectfile
 from .fs import remove_tree
 from .interpreters import VENV, Interpreter
 from .tasks import NULL, TaskContext, run
@@ -21,6 +22,8 @@ from .tasks import NULL, TaskContext, run
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # Conventional folder names of an environment inside a project; shown as "<project>/<folder>".
 PROJECT_ENV_NAMES = (".venv", "venv", "env")
+# The folder an environment is moved to while it is rebuilt.
+BACKUP_RE = re.compile(r"^\..+\.rebuild-\d+$")
 
 
 @dataclass(frozen=True)
@@ -80,8 +83,7 @@ def _same(a: Path, b: Path) -> bool:
 
 def list_envs() -> list[VirtualEnv]:
     """Environments in the app's envs folder plus any the user registered from elsewhere."""
-    # Names that are not valid environment names (e.g. the backup kept while rebuilding) are skipped.
-    envs = [load(p, True) for p in sorted(paths.envs_dir().iterdir()) if NAME_RE.match(p.name) and is_venv(p)]
+    envs = [load(p, True) for p in sorted(paths.envs_dir().iterdir()) if not BACKUP_RE.match(p.name) and is_venv(p)]
     for entry in _registered():
         path = Path(entry)
         if is_venv(path) and not any(_same(path, e.path) for e in envs):
@@ -185,6 +187,15 @@ def base_executable(env: VirtualEnv) -> Optional[Path]:
     return next((Path(home) / n for n in names if (Path(home) / n).is_file()), None)
 
 
+def created_from(env: VirtualEnv, folder: Path) -> bool:
+    """The environment's base Python lives in ``folder`` (not in a sibling such as ``<folder>t``)."""
+    if not env.base:
+        return False
+    base, root = os.path.realpath(env.base), os.path.realpath(folder)
+    return os.path.normcase(base) == os.path.normcase(root) or os.path.normcase(base).startswith(
+        os.path.normcase(root.rstrip(os.sep) + os.sep))
+
+
 def site_packages(env: VirtualEnv) -> list[Path]:
     """The environment's site-packages folders (usually one)."""
     if sys.platform == "win32":
@@ -247,9 +258,28 @@ def requirements_of(env: VirtualEnv) -> str:
         key = deps.normalize(name or "")
         if name and key not in seen and key not in projectfile.SKIP:
             seen.add(key)
-            lines.append(f"{name}=={dist.version}")
+            lines.append(_requirement(name, dist.version, dist.read_text("direct_url.json")))
     lines.sort(key=str.lower)
     return "\n".join(lines) + "\n" if lines else ""
+
+
+def _requirement(name: str, version: str, direct_url: Optional[str]) -> str:
+    """``name==version``, or the original source when it was installed from a folder, archive or VCS (PEP 610)."""
+    try:
+        info = json.loads(direct_url) if direct_url else None
+    except ValueError:
+        info = None
+    url = info.get("url") if isinstance(info, dict) else None
+    if not isinstance(url, str) or not url:
+        return f"{name}=={version}"
+    vcs = info.get("vcs_info")
+    if isinstance(vcs, dict) and vcs.get("vcs"):
+        commit = vcs.get("commit_id") or vcs.get("requested_revision")
+        return f"{name} @ {vcs['vcs']}+{url}" + (f"@{commit}" if commit else "")
+    folder = info.get("dir_info")
+    if isinstance(folder, dict) and folder.get("editable"):
+        return f"-e {url}"
+    return f"{name} @ {url}"
 
 
 def rebuild(env: VirtualEnv, base_python: Path, ctx: TaskContext = NULL) -> VirtualEnv:
@@ -263,6 +293,7 @@ def rebuild(env: VirtualEnv, base_python: Path, ctx: TaskContext = NULL) -> Virt
     ctx.log(f"Reading packages of {env.name}")
     requirements = requirements_of(env)
     system_site = read_pyvenv_cfg(env.path).get("include-system-site-packages", "").lower() == "true"
+    env_kernels = kernels.kernels_for(env.executable, kernels.list_kernels())
     backup = env.path.with_name(f".{env.path.name}.rebuild-{os.getpid()}")
     if backup.exists():
         remove_tree(backup)
@@ -281,6 +312,14 @@ def rebuild(env: VirtualEnv, base_python: Path, ctx: TaskContext = NULL) -> Virt
         ctx.log(f"Restored the previous {env.name}")
         raise
     remove_tree(backup)
+    for kernel in env_kernels:
+        if kernel.executable is not None and not kernel.executable.exists():
+            # e.g. bin/python3.12 is gone after a rebuild on 3.13
+            try:
+                kernels.retarget(kernel, new.executable)
+                ctx.log(f"Jupyter kernel {kernel.name} now runs {new.executable}")
+            except (OSError, ValueError) as exc:
+                ctx.log(f"Could not update Jupyter kernel {kernel.name}: {exc}")
     return new
 
 

@@ -140,6 +140,17 @@ def register(python: Path, name: str, display_name: str, ctx: TaskContext = NULL
     return kernel
 
 
+def retarget(kernel: Kernel, python: Path) -> Kernel:
+    """Point ``kernel`` at another interpreter (its first argument); the rest of the spec is kept."""
+    file = kernel.path / "kernel.json"
+    spec = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(spec, dict) or not isinstance(spec.get("argv"), list) or not spec["argv"]:
+        raise ValueError(f"{file} has no argv")
+    spec["argv"][0] = str(python)
+    file.write_text(json.dumps(spec, indent=1) + "\n", encoding="utf-8")
+    return read_spec(kernel.path) or kernel
+
+
 def remove(kernel: Kernel, ctx: TaskContext = NULL) -> None:
     ctx.log(f"Removing kernel {kernel.name} ({kernel.path})")
     remove_tree(kernel.path)

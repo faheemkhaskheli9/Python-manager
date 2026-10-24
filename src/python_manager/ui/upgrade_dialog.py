@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
-from ..core import packages
+from ..core import history, packages
 from ..core.packages import Upgrade, UpgradeResult
 from . import theme
 from .state import AppState
@@ -126,8 +126,11 @@ def update_all(parent: QWidget, state: AppState, tasks: TaskManager, python: Pat
             on_done()
             _report(parent, env_name, result)
 
-        tasks.run(f"Updating {len(names)} packages ({env_name})",
-                  lambda ctx: packages.upgrade(python, names, ctx), finished)
+        def upgrade(ctx) -> UpgradeResult:
+            history.snapshot(python, "Updating " + ", ".join(names))
+            return packages.upgrade(python, names, ctx)
+
+        tasks.run(f"Updating {len(names)} packages ({env_name})", upgrade, finished)
 
     def failed(message: str):
         if overlay:
