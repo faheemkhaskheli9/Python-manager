@@ -23,9 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import config, projects, venvs
+from ..core import config, imports, projects, venvs
 from ..core.projects import Check, Project, Source
 from .export_dialog import export_environment
+from .imports_dialog import ImportsDialog
 from .state import AppState
 from .tasks import TaskManager
 from .upgrade_dialog import update_all
@@ -89,6 +90,8 @@ class ProjectsPage(QWidget):
         self.env_buttons = [
             self.sync_btn,
             button("Check", self.check, "Compare the environment with the requirements again"),
+            button("Check imports…", self.check_imports,
+                   "Find imports the requirements miss and requirements the code never imports"),
             button("Update all…", self._update_all, "Choose which outdated packages to update"),
             button("Export…", self._export, "Freeze the environment to requirements.txt or pylock.toml"),
             button("Manage packages", self._manage),
@@ -325,6 +328,22 @@ class ProjectsPage(QWidget):
         source = self._source()
         self.tasks.run(f"Syncing {project.name}", lambda ctx: projects.sync(project, source, ctx),
                        lambda _: self.check())
+
+    def check_imports(self) -> None:
+        project = self.project()
+        env = project.env() if project else None
+        if not env:
+            return
+        source = self._compare_source(project)
+        has_source = source is not None and source.path.is_file()
+        label = source.label if has_source else "the requirements"
+
+        def work(_):
+            requirements = projects.read_requirements(source) if has_source else []
+            return imports.check(project.path, requirements, env.executable)
+
+        self.tasks.run(f"Checking imports of {project.name}", work,
+                       lambda result: ImportsDialog(*result, project.name, label, self).exec())
 
     def _update_all(self) -> None:
         project = self.project()
