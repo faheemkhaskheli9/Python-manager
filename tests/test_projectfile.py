@@ -30,7 +30,7 @@ def test_pyproject_lists_top_level_packages(monkeypatch, tmp_path):
     file = tmp_path / "pyproject.toml"
     file.write_text(text, encoding="utf-8")
     assert projectfile.pyproject_dependencies(file) == ["requests>=2.32.0", "Rich>=13.7"]
-    assert projectfile._toml_dependencies(text) == ["requests>=2.32.0", "Rich>=13.7"]
+    assert projectfile._toml_fallback(text)["project"]["dependencies"] == ["requests>=2.32.0", "Rich>=13.7"]
 
 
 def test_toml_fallback_parser():
@@ -48,10 +48,40 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+
+[dependency-groups]
+test = ["coverage", {include-group = "lint"}]
+lint = ['ruff']
 """
-    assert projectfile._toml_dependencies(text) == ["a>=1", 'b[extra]; python_version < "4"',
-                                                     "c @ https://example.com/c.whl"]
-    assert projectfile._toml_dependencies("[tool.x]\ndependencies = ['z']\n") == []
+    data = projectfile._toml_fallback(text)
+    assert data["project"]["name"] == "x"
+    assert data["project"]["dependencies"] == ["a>=1", 'b[extra]; python_version < "4"',
+                                               "c @ https://example.com/c.whl"]
+    assert data["project"]["optional-dependencies"] == {"dev": ["pytest"]}
+    assert data["dependency-groups"] == {"test": ["coverage", {"include-group": "lint"}], "lint": ["ruff"]}
+    assert projectfile._toml_fallback("[tool.x]\ndependencies = ['z']\n")["project"] == \
+        {"optional-dependencies": {}}
+
+
+def test_pyproject_requirements(tmp_path):
+    file = tmp_path / "pyproject.toml"
+    file.write_text("""
+[project]
+name = "My_App"
+dependencies = ["requests"]
+
+[project.optional-dependencies]
+docs = ["sphinx"]
+all = ["my-app[docs]", "rich"]
+
+[dependency-groups]
+dev = ["pytest", {include-group = "lint"}]
+lint = ["ruff", {include-group = "dev"}]
+""")
+    assert projectfile.pyproject_options(file) == (["docs", "all"], ["dev", "lint"])
+    assert projectfile.pyproject_requirements(file) == ["requests"]
+    assert projectfile.pyproject_requirements(file, extras=["all"]) == ["requests", "sphinx", "rich"]
+    assert projectfile.pyproject_requirements(file, groups=["dev"]) == ["requests", "pytest", "ruff"]
 
 
 def test_install_file_dispatch(monkeypatch, tmp_path):

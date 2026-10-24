@@ -184,6 +184,31 @@ def base_executable(env: VirtualEnv) -> Optional[Path]:
     return next((Path(home) / n for n in names if (Path(home) / n).is_file()), None)
 
 
+def site_packages(env: VirtualEnv) -> list[Path]:
+    """The environment's site-packages folders (usually one)."""
+    if sys.platform == "win32":
+        candidates = [env.path / "Lib" / "site-packages"]
+    else:
+        candidates = sorted((env.path / "lib").glob("*/site-packages"))
+    return [p for p in candidates if p.is_dir()]
+
+
+def is_broken(env: VirtualEnv) -> bool:
+    """The environment can no longer run: its interpreter or the Python it was created from is gone."""
+    return not env.valid or base_executable(env) is None
+
+
+def last_changed(env: VirtualEnv) -> float:
+    """When packages were last installed or removed (modification time of site-packages)."""
+    times = []
+    for path in [*site_packages(env), env.path / "pyvenv.cfg"]:
+        try:
+            times.append(path.stat().st_mtime)
+        except OSError:
+            pass
+    return max(times, default=0.0)
+
+
 def clone(
     source: VirtualEnv,
     name: str,

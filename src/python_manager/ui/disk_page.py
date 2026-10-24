@@ -2,39 +2,46 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QItemSelectionModel, Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
-from ..core import disk, python_versions, venvs
+from ..core import config, disk, python_versions, venvs
 from ..core.disk import Usage
 from .state import AppState
 from .tasks import TaskManager
-from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
+from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payloads
+
+BROKEN_COLOR = "#c62828"
+STALE_COLOR = "#ef6c00"
 
 
 class DiskPage(QWidget):
     def __init__(self, state: AppState, tasks: TaskManager):
         super().__init__()
         self.state, self.tasks = state, tasks
-        self._scanned = False
+        self.scanned = False
 
-        self.table = make_table(["Type", "Name", "Size", "Location"], stretch=3)
+        self.table = make_table(["Type", "Name", "Size", "Note", "Location"], stretch=4, multi=True)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.overlay = loading_overlay(self.table)
         self.total = QLabel("Sizes are calculated when this page is opened.")
         self.clean_btn = button("Clean", self.clean, "Empty the selected cache")
-        self.delete_btn = button("Delete", self.delete, "Delete the selected environment or Python")
+        self.delete_btn = button("Delete", self.delete, "Delete the selected environments or Pythons")
+        self.stale_btn = button("Select stale", self.select_stale,
+                                "Select environments whose Python is gone or that have not changed for a long time")
         self.folder_btn = button("Open folder", lambda: self._with_selected(lambda u: open_folder(u.path)))
         layout = QVBoxLayout(self)
         layout.addLayout(button_row(button("Refresh", self.scan)))
         layout.addWidget(self.table)
         layout.addWidget(self.total)
-        layout.addLayout(button_row(self.clean_btn, self.delete_btn, self.folder_btn))
+        layout.addLayout(button_row(self.clean_btn, self.delete_btn, self.stale_btn, self.folder_btn))
         self._update_buttons()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        if not self._scanned:
-            self._scanned = True
+        if not self.scanned:
+            self.scanned = True
             self.scan()
 
     def scan(self) -> None:
@@ -43,11 +50,19 @@ class DiskPage(QWidget):
 
         def done(items: list[Usage]):
             self.overlay.stop()
-            fill_table(self.table, [(u, (u.kind, u.name, (disk.format_size(u.size), u.size), str(u.path)))
+            fill_table(self.table, [(u, (u.kind, u.name, (disk.format_size(u.size), u.size), u.note, str(u.path)))
                                     for u in items])
+            for row in range(self.table.rowCount()):
+                note = self.table.item(row, 3)
+                if note.text():
+                    note.setForeground(QBrush(QColor(BROKEN_COLOR if note.text() == disk.BROKEN else STALE_COLOR)))
             caches = sum(u.size for u in items if u.cleanable)
-            self.total.setText(f"Total: {disk.format_size(sum(u.size for u in items))}"
-                               f" · caches: {disk.format_size(caches)}")
+            stale = [u for u in items if u.stale]
+            text = f"Total: {disk.format_size(sum(u.size for u in items))} · caches: {disk.format_size(caches)}"
+            if stale:
+                text += f" · {len(stale)} stale environment{'s' * (len(stale) != 1)}: " \
+                        f"{disk.format_size(sum(u.size for u in stale))}"
+            self.total.setText(text)
             self._update_buttons()
 
         def failed(message: str):
@@ -56,19 +71,40 @@ class DiskPage(QWidget):
 
         self.tasks.run("Calculating disk usage", disk.scan, done, failed, foreground=False)
 
-    def _selected(self) -> Usage:
-        return selected_payload(self.table)
+    def _selected_all(self) -> list[Usage]:
+        return selected_payloads(self.table)
+
+    def _selected(self) -> Usage | None:
+        """The selected row when exactly one is selected."""
+        items = self._selected_all()
+        return items[0] if len(items) == 1 else None
 
     def _with_selected(self, fn) -> None:
         usage = self._selected()
         if usage:
             fn(usage)
 
+    def _deletable(self) -> list[Usage]:
+        return [u for u in self._selected_all() if u.kind in (disk.ENV, disk.PYTHON)]
+
     def _update_buttons(self) -> None:
         usage = self._selected()
         self.clean_btn.setEnabled(bool(usage and usage.cleanable))
-        self.delete_btn.setEnabled(bool(usage and usage.kind in (disk.ENV, disk.PYTHON)))
+        self.delete_btn.setEnabled(bool(self._deletable()))
         self.folder_btn.setEnabled(usage is not None)
+
+    def select_stale(self) -> None:
+        self.table.clearSelection()
+        model, found = self.table.selectionModel(), 0
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole).stale:
+                found += 1
+                model.select(self.table.model().index(row, 0),
+                             QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+        if not found:
+            days = int(config.get("stale_days") or 180)
+            QMessageBox.information(self, "Select stale", "No environment is broken or unchanged for "
+                                                          f"{days} days (change the limit in Settings).")
 
     def clean(self) -> None:
         usage = self._selected()
@@ -82,21 +118,29 @@ class DiskPage(QWidget):
             self.tasks.run(f"Cleaning {usage.kind}", lambda ctx: disk.clean(usage, ctx), lambda _: self.scan())
 
     def delete(self) -> None:
-        usage = self._selected()
-        if not usage or usage.kind not in (disk.ENV, disk.PYTHON):
+        items = self._deletable()
+        if not items:
             return
-        answer = QMessageBox.question(
-            self, "Delete", f"Permanently delete {usage.kind.lower()} “{usage.name}” "
-                            f"({disk.format_size(usage.size)})?\n\n{usage.path}")
+        total = disk.format_size(sum(u.size for u in items))
+        listed = "\n".join(f"• {u.name} ({disk.format_size(u.size)})" for u in items[:15])
+        more = f"\n… and {len(items) - 15} more" if len(items) > 15 else ""
+        what = f"{items[0].kind.lower()} “{items[0].name}”" if len(items) == 1 else f"{len(items)} items"
+        answer = QMessageBox.question(self, "Delete", f"Permanently delete {what} ({total})?\n\n{listed}{more}")
         if answer != QMessageBox.StandardButton.Yes:
             return
-        if usage.kind == disk.ENV:
-            fn = lambda ctx: venvs.delete(usage.payload, ctx)  # noqa: E731
-        else:
-            fn = lambda ctx: python_versions.uninstall(usage.payload, ctx)  # noqa: E731
+
+        def delete_all(ctx):
+            for done, usage in enumerate(items):
+                ctx.check()
+                ctx.progress(done, len(items))
+                if usage.kind == disk.ENV:
+                    venvs.delete(usage.payload, ctx)
+                else:
+                    python_versions.uninstall(usage.payload, ctx)
 
         def done(_):
             self.state.refresh()
             self.scan()
 
-        self.tasks.run(f"Deleting {usage.name}", fn, done)
+        title = f"Deleting {items[0].name}" if len(items) == 1 else f"Deleting {len(items)} items"
+        self.tasks.run(title, delete_all, done)

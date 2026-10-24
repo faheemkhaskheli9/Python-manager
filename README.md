@@ -20,7 +20,7 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   "Required by" column). Uninstalling warns about packages that still depend on the selection and
   offers to remove dependencies that are no longer needed.
 - **Fast backend** – uses [uv](https://docs.astral.sh/uv/) for installs and environment creation when
-  it is on `PATH` (toggle under *File → Use uv when installed*), falling back to pip and `venv`.
+  it is on `PATH` (toggle in *File → Settings*), falling back to pip and `venv`.
 - **Favourite packages** – star any package; favourites are shown with ★, can be filtered,
   installed into any environment in one click, and optionally installed into new environments.
 - **Virtual environments** – create environments from any installed Python, manage their packages,
@@ -30,13 +30,18 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 - **Projects** – add a project folder with `pyproject.toml`, `requirements.txt` or `uv.lock`. The app
   finds its environment (`.venv`, `venv` or `env`) or creates `.venv`, lists each requirement as
   OK, missing or wrong version, and syncs it in one click (`uv sync --frozen` when there is a
-  `uv.lock` and uv is installed).
-- **Scheduled checks** – once a day every environment is checked in the background for outdated and
-  vulnerable packages. Results show in an *Updates* column, as a count next to
-  *Virtual Environments* and in a desktop notification (*File → Check environments now /
-  Check environments daily*).
+  `uv.lock` and uv is installed). Compare against any `requirements*.txt`, or `pyproject.toml` with
+  an extra, a dependency group (PEP 735) or all of them; installed packages the requirements do not
+  list are shown too. The comparison refreshes when a requirements file or the environment changes.
+- **Scheduled checks** – every environment is checked in the background (daily by default) for
+  outdated and vulnerable packages. Results show in an *Updates* column, as a count next to
+  *Virtual Environments* and in a desktop notification (*File → Check environments now*).
 - **Disk usage** – size of every environment, installed Python, the download cache and the pip and
-  uv caches; clean a cache or delete an environment from the same page.
+  uv caches; clean a cache or delete environments from the same page. Environments whose Python is
+  gone or that have not changed for a long time are flagged, and *Select stale* selects them all.
+- **Settings** – *File → Settings*: uv on or off, the default Python and folder for new
+  environments, how often environments are checked, whether the check includes the security
+  lookup and shows notifications, and when an environment counts as stale.
 - **Log file** – everything shown in the Output panel, plus errors, is written to a rotating log
   (*File → Open log file*) to attach to bug reports.
 

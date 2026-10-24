@@ -17,8 +17,13 @@ DEFAULTS: dict[str, Any] = {
     "use_uv": True,  # use uv for packages and environments when it is installed
     "auto_check": True,  # check environments for outdated and vulnerable packages in the background
     "auto_check_hours": 24,
+    "auto_check_security": True,  # include the vulnerability lookup in scheduled checks
+    "notify": True,  # desktop notification when a scheduled check finds something
     "last_health_check": 0,
     "projects": [],  # project folders added on the Projects page
+    "default_python": "",  # interpreter preselected for new environments; empty: the first listed
+    "envs_location": "",  # parent folder for new environments; empty: the app's envs folder
+    "stale_days": 180,  # Disk Usage flags environments unchanged for longer
 }
 
 _lock = threading.Lock()

@@ -47,3 +47,27 @@ def test_clean_keeps_small_app_files(tmp_path):
 
     with pytest.raises(ValueError):
         disk.clean(disk.Usage(disk.ENV, "demo", tmp_path, 1))
+
+
+def test_env_status_broken_and_stale(tmp_path):
+    import os
+    import time
+
+    from python_manager.core import config
+
+    env = venvs.create("old", Path(sys.executable), tmp_path, with_pip=False)
+    assert venvs.site_packages(env) and not venvs.is_broken(env)
+    assert disk.env_status(env) == ("", False)
+
+    long_ago = time.time() - 400 * 86400
+    for path in [*venvs.site_packages(env), env.path / "pyvenv.cfg"]:
+        os.utime(path, (long_ago, long_ago))
+    assert disk.env_status(env) == ("unchanged for 1 year", True)
+    config.set("stale_days", 500)
+    assert disk.env_status(env) == ("", False)
+
+    cfg = env.path / "pyvenv.cfg"
+    lines = [l for l in cfg.read_text().splitlines() if not l.startswith(("home", "executable"))]
+    cfg.write_text("\n".join(lines + [f"home = {tmp_path / 'gone'}"]) + "\n")
+    assert venvs.is_broken(env)
+    assert disk.env_status(env) == (disk.BROKEN, True)
