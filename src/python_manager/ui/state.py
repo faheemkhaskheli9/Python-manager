@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from ..core import health, packages, python_versions, venvs
+from ..core import conda, health, packages, python_versions, venvs
 from ..core.interpreters import Interpreter, find_system_pythons
 from .tasks import TaskManager
 
@@ -22,6 +23,7 @@ class AppState(QObject):
         self.managed: list[Interpreter] = []
         self.system: list[Interpreter] = []
         self.envs: list[venvs.VirtualEnv] = []
+        self.conda_envs: list[conda.CondaEnv] = []
         self.loading = False
         self.health: dict[str, health.Report] = health.load()  # keyed by interpreter path
         self.health_checking = False
@@ -49,10 +51,10 @@ class AppState(QObject):
 
         def load(_ctx):
             system = find_system_pythons() if scan_system else self.system
-            return python_versions.list_installed(), system, venvs.list_envs()
+            return python_versions.list_installed(), system, venvs.list_envs(), conda.list_envs()
 
         def done(result):
-            self.managed, self.system, self.envs = result
+            self.managed, self.system, self.envs, self.conda_envs = result
             self.loading = False
             self.loading_changed.emit(False)
             self.changed.emit()
@@ -69,6 +71,10 @@ class AppState(QObject):
         result = list(self.managed) + list(self.system)
         if include_envs:
             result += [e.interpreter() for e in self.envs if e.valid]
+            # A conda base on PATH is already listed as a system Python.
+            known = {os.path.realpath(i.executable) for i in result}
+            result += [e.interpreter() for e in self.conda_envs
+                       if e.valid and os.path.realpath(e.executable) not in known]
         return result
 
     def checked_interpreters(self) -> list[Interpreter]:

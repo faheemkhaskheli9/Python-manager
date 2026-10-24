@@ -10,6 +10,11 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Tools page: list command-line tools installed with `uv tool` or pipx with their commands, Python
+  and latest version; install (optionally on a chosen Python), upgrade, upgrade all and
+  uninstall. ([#7])
+- Conda, mamba and micromamba environments are listed read-only on the Virtual Environments page
+  with their activation command, and their packages can be viewed on the Packages page. ([#7])
 - Projects page: compare against any `requirements*.txt` or `pyproject.toml` with an extra, a
   dependency group or all of them; list installed packages the requirements do not name; refresh
   automatically when a requirements file or the environment changes. ([#6])
@@ -111,6 +116,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#4]: https://github.com/faheemkhaskheli9/python-manager/pull/4
 [#5]: https://github.com/faheemkhaskheli9/python-manager/pull/5
 [#6]: https://github.com/faheemkhaskheli9/python-manager/pull/6
+[#7]: https://github.com/faheemkhaskheli9/python-manager/pull/7
 [a036314]: https://github.com/faheemkhaskheli9/python-manager/commit/a036314
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf

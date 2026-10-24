@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import config, favorites, packages, paths, venvs
+from ..core import conda, config, favorites, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
 from .state import AppState
@@ -154,6 +155,23 @@ class VenvsPage(QWidget):
         layout.addWidget(self.table)
         layout.addWidget(self.activate_hint)
         layout.addLayout(button_row(*self.selection_buttons))
+
+        # Conda environments are listed so their packages can be inspected; conda manages them.
+        self.conda_table = make_table(["Name", "Python", "Location"], stretch=2)
+        self.conda_table.itemSelectionChanged.connect(self._update_conda_buttons)
+        self.conda_table.doubleClicked.connect(lambda _: self._conda_packages())
+        self.conda_hint = QLineEdit(readOnly=True, placeholderText="Activation command")
+        self.conda_buttons = [
+            button("Show packages", self._conda_packages, "Packages are listed read-only; change them with conda"),
+            button("Open folder", lambda: self._with_conda(lambda e: open_folder(e.path))),
+        ]
+        self.conda_box = QGroupBox("Conda environments (read-only)")
+        conda_layout = QVBoxLayout(self.conda_box)
+        conda_layout.addWidget(self.conda_table)
+        conda_layout.addWidget(self.conda_hint)
+        conda_layout.addLayout(button_row(*self.conda_buttons))
+        self.conda_box.hide()
+        layout.addWidget(self.conda_box)
         state.changed.connect(self._render)
         state.health_changed.connect(self._render)
         state.loading_changed.connect(
@@ -174,6 +192,24 @@ class VenvsPage(QWidget):
         fill_table(self.table, rows)
         self.table.setToolTip("Updates: result of the last scheduled check (File → Check environments now)")
         self._update_buttons()
+        fill_table(self.conda_table, [(e, (e.name, e.version or "no Python", str(e.path)))
+                                      for e in self.state.conda_envs])
+        self.conda_box.setVisible(bool(self.state.conda_envs))
+        self._update_conda_buttons()
+
+    def _with_conda(self, fn) -> None:
+        env = selected_payload(self.conda_table)
+        if env:
+            fn(env)
+
+    def _update_conda_buttons(self) -> None:
+        env: Optional[conda.CondaEnv] = selected_payload(self.conda_table)
+        self.conda_buttons[0].setEnabled(bool(env and env.valid))
+        self.conda_buttons[1].setEnabled(env is not None)
+        self.conda_hint.setText(conda.activation_command(env) if env else "")
+
+    def _conda_packages(self) -> None:
+        self._with_conda(lambda e: e.valid and self.manage_packages(e.executable))
 
     def _selected(self) -> VirtualEnv:
         return selected_payload(self.table)

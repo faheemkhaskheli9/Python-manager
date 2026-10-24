@@ -33,6 +33,12 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   `uv.lock` and uv is installed). Compare against any `requirements*.txt`, or `pyproject.toml` with
   an extra, a dependency group (PEP 735) or all of them; installed packages the requirements do not
   list are shown too. The comparison refreshes when a requirements file or the environment changes.
+- **Tools** – command-line tools installed with `uv tool` or pipx in one list, with their commands,
+  Python and the latest version on PyPI. Install a tool (optionally on a chosen Python), upgrade
+  one or all, or uninstall it.
+- **Conda environments** – conda, mamba and micromamba environments are listed read-only on the
+  Virtual Environments page with their activation command; their packages can be viewed but are
+  changed with conda.
 - **Scheduled checks** – every environment is checked in the background (daily by default) for
   outdated and vulnerable packages. Results show in an *Updates* column, as a count next to
   *Virtual Environments* and in a desktop notification (*File → Check environments now*).
@@ -78,6 +84,8 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Scheduled checks | `pip list --outdated` plus the security check for each environment and app-installed Python, at most once a day; results are cached in `cache/health.json`. |
 | Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
 | Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. |
+| Tools | `uv tool list --show-paths` and `pipx list --json`; install, upgrade and uninstall run the same manager's commands. Latest versions come from the PyPI JSON API. |
+| Conda | Found without running conda: `~/.conda/environments.txt`, `CONDA_PREFIX`, `CONDA_EXE`, `MAMBA_ROOT_PREFIX` and the usual install folders (`miniconda3`, `anaconda3`, `miniforge3`, …). The Python version is read from `conda-meta`. |
 | Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
 App data (installed Pythons, environments, download cache, `config.json`, `logs/`):
@@ -96,7 +104,7 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, health, disk, logs
+          # lock, security, health, disk, tools, conda, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core (runs offline)
 ```
