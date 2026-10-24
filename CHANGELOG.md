@@ -10,6 +10,11 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- License report: *Licenses…* on the Packages page lists each package's licence (from
+  `License-Expression`, classifiers or `License`) and its category (permissive, weak copyleft,
+  copyleft, public domain, other, unknown); filter it and save it as CSV, Markdown or JSON. ([#9])
+- UI smoke tests that build every page, switch themes and open the license report offscreen; CI
+  installs PySide6 and runs them on every OS. ([#9])
 - Dark theme: *File → Settings → Theme* switches between light, dark and the system's colours;
   status colours stay readable in both. ([#8])
 - Projects page: show the Python a project asks for in `.python-version` and `requires-python`,
@@ -66,6 +71,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
   `<project>/.venv`. ([#3])
 
 ### Fixed
+- Jupyter kernels: a `kernel.json` that is valid JSON but not a kernel spec (`[]`, `null`, a
+  non-list `argv`) is skipped instead of stopping the Virtual Environments page from loading, and
+  `JUPYTER_PATH` folders now take precedence over the user folder, as in Jupyter. ([#9])
 - Security results of one environment no longer show up after switching to another. ([#3])
 
 ## [0.2.0] - 2026-10-22
@@ -129,3 +137,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [2ea1319]: https://github.com/faheemkhaskheli9/python-manager/commit/2ea1319
 [3653ddf]: https://github.com/faheemkhaskheli9/python-manager/commit/3653ddf
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
+[#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9

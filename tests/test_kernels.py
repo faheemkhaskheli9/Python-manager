@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -42,18 +43,31 @@ def test_list_and_match_kernels(jupyter_home, tmp_path):
     write_spec(jupyter_home / "kernels" / "plain", ["python", "-m", "ipykernel_launcher"], "Plain")
     (jupyter_home / "kernels" / "invalid").mkdir()
     (jupyter_home / "kernels" / "invalid" / "kernel.json").write_text("{")
+    for name, text in [("list", "[]"), ("null", "null"), ("argv", '{"argv": 1}'), ("display", '{"argv": [], "display_name": 1}')]:
+        (jupyter_home / "kernels" / name).mkdir()
+        (jupyter_home / "kernels" / name / "kernel.json").write_text(text)
     write_spec(tmp_path / "system" / "kernels" / "Env", [str(env / "bin" / "python3")], "Duplicate")
     write_spec(tmp_path / "system" / "kernels" / "ir", ["R"], "R", "R")
 
     found = {k.name: k for k in kernels.list_kernels()}
-    assert sorted(found) == ["env", "gone", "ir", "plain"]  # "Env" is hidden by "env", as in Jupyter
+    assert sorted(found) == ["display", "env", "gone", "ir", "plain"]  # "Env" is hidden by "env", as in Jupyter
     assert found["env"].display_name == "Python (env)" and found["env"].user and not found["env"].broken
     assert found["gone"].broken
     assert found["plain"].executable is None and not found["plain"].broken
     assert not found["ir"].user and found["ir"].language == "R"
     assert [k.name for k in kernels.kernels_for(python, found.values())] == ["env"]
     kernels.remove(found["gone"])
-    assert sorted(k.name for k in kernels.list_kernels()) == ["env", "ir", "plain"]
+    assert found["display"].display_name == "display"
+    assert sorted(k.name for k in kernels.list_kernels()) == ["display", "env", "ir", "plain"]
+
+
+def test_jupyter_path_searched_first(monkeypatch, tmp_path):
+    monkeypatch.setenv("JUPYTER_DATA_DIR", str(tmp_path / "user"))
+    monkeypatch.setenv("JUPYTER_PATH", os.pathsep.join([str(tmp_path / "a"), str(tmp_path / "b")]))
+    assert kernels.data_dirs()[:3] == [tmp_path / "a", tmp_path / "b", tmp_path / "user"]
+    write_spec(tmp_path / "user" / "kernels" / "k", ["python"], "User")
+    write_spec(tmp_path / "b" / "kernels" / "k", ["python"], "Override")
+    assert [k.display_name for k in kernels.list_kernels() if k.name == "k"] == ["Override"]
 
 
 def test_kernel_name():

@@ -40,6 +40,8 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   one or all, or uninstall it.
 - **Jupyter kernels** – add an environment to Jupyter in one click (ipykernel is installed when
   missing) or remove it again; see every installed kernel and clean up those whose Python is gone.
+- **License report** – *Licenses…* on the Packages page lists each package's licence and whether
+  it is permissive, weak copyleft or copyleft; filter it and save the report as CSV, Markdown or JSON.
 - **Conda environments** – conda, mamba and micromamba environments are listed read-only on the
   Virtual Environments page with their activation command; their packages can be viewed but are
   changed with conda.
@@ -89,7 +91,8 @@ Requires Python 3.9+ and PySide6 (installed automatically).
 | Update all | `pip list --outdated` for the list, `pip install --upgrade` for the chosen packages, then `pip check` for broken requirements (uv equivalents when uv is used). |
 | Export / lock | Versions come from installed metadata; hashes and file URLs for `pylock.toml` and hashed requirements come from the PyPI JSON API. Packages not on PyPI are left out and listed. |
 | Tools | `uv tool list --show-paths` and `pipx list --json`; install, upgrade and uninstall run the same manager's commands. Latest versions come from the PyPI JSON API. |
-| Jupyter kernels | Kernel specs are read from Jupyter's user, `JUPYTER_PATH` and system data folders; adding one runs `python -m ipykernel install --user` in the environment, removing one deletes its folder. |
+| Jupyter kernels | Kernel specs are read from Jupyter's `JUPYTER_PATH`, user and system data folders, in that order; adding one runs `python -m ipykernel install --user` in the environment, removing one deletes its folder. |
+| Licenses | Read from installed metadata inside the environment: `License-Expression` (PEP 639) first, then `License ::` classifiers, then the `License` field. Nothing is sent over the network. |
 | Conda | Found without running conda: `~/.conda/environments.txt`, `CONDA_PREFIX`, `CONDA_EXE`, `MAMBA_ROOT_PREFIX` and the usual install folders (`miniconda3`, `anaconda3`, `miniforge3`, …). The Python version is read from `conda-meta`. |
 | Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
@@ -109,9 +112,9 @@ when listing many releases.
 ```
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
-          # lock, security, health, disk, tools, conda, kernels, logs
+          # lock, security, licenses, health, disk, tools, conda, kernels, logs
   ui/     # PySide6 widgets: one page per feature, background task runner
-tests/    # pytest suite for core (runs offline)
+tests/    # pytest suite for core plus offscreen UI smoke tests
 ```
 
 ## Tests
@@ -119,6 +122,9 @@ tests/    # pytest suite for core (runs offline)
 ```bash
 pytest
 ```
+
+UI tests build the windows offscreen (`QT_QPA_PLATFORM=offscreen` is set for you) and are skipped
+when PySide6 is not installed.
 
 ## Download
 

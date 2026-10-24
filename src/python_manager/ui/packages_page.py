@@ -26,11 +26,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import deps, favorites, packages, pypi_names, security
+from ..core import deps, favorites, licenses, packages, pypi_names, security
 from ..core.interpreters import CONDA, Interpreter
 from ..core.packages import Package, ProjectInfo
 from .deps_dialog import DependencyDialog
 from .export_dialog import export_environment
+from .licenses_dialog import LicensesDialog
 from .security_dialog import SecurityDialog
 from .state import AppState
 from .tasks import TaskManager
@@ -106,7 +107,9 @@ class PackagesPage(QWidget):
         lay.addLayout(button_row(button("Install from file…", self.install_from_file,
                                         "Install a wheel, source archive or requirements.txt"),
                                  button("Export…", self.export_requirements,
-                                        "Save as requirements.txt, pylock.toml or pyproject.toml")))
+                                        "Save as requirements.txt, pylock.toml or pyproject.toml"),
+                                 button("Licenses…", self.show_licenses,
+                                        "List each package's licence and save a report")))
 
         # Install / download panel
         self.name = QLineEdit(placeholderText="Package name, e.g. requests")
@@ -406,6 +409,19 @@ class PackagesPage(QWidget):
         if self.tasks.run(f"Security check ({interp.name})", lambda ctx: security.scan(items, ctx), done,
                           self._failed("Security check")):
             self.overlay.start("Looking up known vulnerabilities…")
+
+    def show_licenses(self) -> None:
+        interp = self.python
+        if interp is None:
+            return
+
+        def done(items):
+            self.overlay.stop()
+            LicensesDialog(items, interp.name, self).exec()
+
+        if self.tasks.run(f"Reading licences ({interp.name})", lambda _: licenses.scan(interp.executable), done,
+                          self._failed("Licenses")):
+            self.overlay.start("Reading package licences…")
 
     def _failed(self, title: str):
         """Error handler for a task shown with the overlay: hide it and report the error."""
