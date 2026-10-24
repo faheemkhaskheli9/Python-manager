@@ -10,6 +10,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- Projects: when no installed Python fits a project's `.python-version` or `requires-python`,
+  *Create environment…* offers to download and install the newest matching Python and creates the
+  environment on it. ([#20])
 - End of life: a *Support* column on the Pythons and Virtual Environments pages shows when a
   Python version's security support ended or ends within six months; `python-manager-cli pythons`
   and `envs` report it too. ([#19])
@@ -175,6 +178,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
 [#19]: https://github.com/faheemkhaskheli9/python-manager/pull/19
+[#20]: https://github.com/faheemkhaskheli9/python-manager/pull/20
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

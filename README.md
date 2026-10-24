@@ -46,7 +46,9 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   an extra, a dependency group (PEP 735) or all of them; installed packages the requirements do not
   list are shown too. The comparison refreshes when a requirements file or the environment changes.
   The Python the project asks for (`.python-version`, `requires-python`) is shown, can be set, and is
-  preselected for a new environment; an environment on another Python is flagged.
+  preselected for a new environment; an environment on another Python is flagged. When no installed
+  Python fits, *Create environment…* downloads and installs a matching one and creates the
+  environment on it.
   *Check imports…* scans the project's code and lists imports no installed package provides,
   imports from packages the requirements do not declare, and requirements the code never imports.
 - **Tools** – command-line tools installed with `uv tool` or pipx in one list, with their commands,

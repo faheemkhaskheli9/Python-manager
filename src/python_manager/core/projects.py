@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from . import config, deps, packages, projectfile, venvs
+from . import config, deps, packages, projectfile, python_versions, venvs
 from .tasks import NULL, CommandError, TaskContext, capture, run
 
 PYPROJECT = "pyproject.toml"
@@ -256,6 +256,37 @@ def preferred_python(project: Project, versions: list[str], default: int = 0) ->
     if not fits or default in fits:
         return default
     return max(fits, key=lambda i: _numbers(versions[i]))
+
+
+def fits(project: Project, version: str) -> bool:
+    """Whether Python ``version`` fits both ``.python-version`` and ``requires-python``."""
+    return pin_matches(python_pin(project), version) and satisfies(requires_python(project), version)
+
+
+def matching_download(project: Project,
+                      available: list[python_versions.RemotePython]) -> Optional[python_versions.RemotePython]:
+    """The newest downloadable Python that fits the project, or None.
+
+    A pin ending in ``t`` (``3.13t``) asks for a free-threaded build; pre-releases are picked only
+    when no final release fits.
+    """
+    freethreaded = python_pin(project).lower().endswith("t")
+    candidates = [r for r in available if r.freethreaded == freethreaded and fits(project, r.version)]
+    final = [r for r in candidates if not r.prerelease]
+    return max(final or candidates, key=lambda r: _numbers(r.version), default=None)
+
+
+def install_python_and_env(project: Project, remote: python_versions.RemotePython, ctx: TaskContext = NULL,
+                           install: bool = True) -> venvs.VirtualEnv:
+    """Install ``remote`` (unless it already is) and create the project's environment on it."""
+    if remote.key in python_versions.installed_keys():
+        exe = python_versions.find_executable(python_versions.install_dir(remote))
+        if exe is None:
+            raise FileNotFoundError(f"{python_versions.install_dir(remote)} contains no Python executable")
+    else:
+        exe = python_versions.install(remote, ctx).executable
+    ctx.check()
+    return create_env(project, exe, ctx, install)
 
 
 def marker_environment(python: Path) -> dict[str, str]:
