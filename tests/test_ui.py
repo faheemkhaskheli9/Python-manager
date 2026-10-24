@@ -254,3 +254,30 @@ def test_imports_dialog(app):
     assert dialog.table.item(0, 2).text() == "First imported in: main.py"
     assert "1 imported module(s) not installed" in dialog.summary.text()
     assert "requirements.txt" in ImportsDialog([], [], "proj", "requirements.txt").summary.text()
+
+
+def test_support_columns(app, monkeypatch):
+    from python_manager.core import python_versions, venvs
+    from python_manager.core.interpreters import MANAGED, Interpreter
+    from python_manager.ui import theme
+    from python_manager.ui.pythons_page import PythonsPage
+    from python_manager.ui.state import AppState
+    from python_manager.ui.tasks import TaskManager
+    from python_manager.ui.venvs_page import VenvsPage
+
+    old = Interpreter(python_versions.paths.pythons_dir() / "bin" / "python3", "3.8.20", MANAGED, "cpython-3.8.20")
+    window = QtWidgets.QWidget()
+    tasks = TaskManager(window)
+    state = AppState(tasks)
+    monkeypatch.setattr(state, "interpreters", lambda include_envs=True: [old])
+    page = PythonsPage(state, tasks)
+    page._set_available([])
+    cell = page.installed.item(0, 4)
+    assert cell.text() == "End of life since 2024-10-07"
+    assert cell.data(theme.COLOR_ROLE) == "error"
+
+    state.envs = [venvs.VirtualEnv("old", python_versions.paths.envs_dir() / "old", "3.8.20", "", True)]
+    envs_page = VenvsPage(state, tasks, lambda path: None)
+    envs_page._render()
+    assert envs_page.table.item(0, 2).text().startswith("End of life")
+    assert envs_page.table.item(0, 1).text() == "3.8.20"

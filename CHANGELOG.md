@@ -10,6 +10,12 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 ## [Unreleased]
 
 ### Added
+- End of life: a *Support* column on the Pythons and Virtual Environments pages shows when a
+  Python version's security support ended or ends within six months; `python-manager-cli pythons`
+  and `envs` report it too. ([#19])
+- Command line: `licenses` prints each package's licence (table, CSV, Markdown or JSON) and with
+  `--fail-on` exits 1 when a package is in a listed category; `export` saves an environment in the
+  formats of the Export dialog. Both default to the current folder's environment. ([#19])
 - Import check: *Check imports…* on the Projects page lists imports no installed package provides,
   imports the requirements do not declare and requirements the code never imports. ([#13])
 - Command line: `python-manager-cli` lists Pythons and environments, checks environments for
@@ -168,6 +174,7 @@ First version. These changes were committed directly to `main`, before pull requ
 [#8]: https://github.com/faheemkhaskheli9/python-manager/pull/8
 [#9]: https://github.com/faheemkhaskheli9/python-manager/pull/9
 [#10]: https://github.com/faheemkhaskheli9/python-manager/pull/10
+[#19]: https://github.com/faheemkhaskheli9/python-manager/pull/19
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11

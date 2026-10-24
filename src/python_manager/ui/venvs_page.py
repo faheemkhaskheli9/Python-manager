@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import conda, config, favorites, kernels, packages, paths, venvs
+from ..core import conda, config, eol, favorites, kernels, packages, paths, venvs
 from ..core.venvs import VirtualEnv
 from .export_dialog import export_environment
 from .find_dialog import FindPackageDialog
@@ -31,7 +31,8 @@ from .kernels_dialog import KernelsDialog
 from .state import AppState
 from .tasks import TaskManager
 from .upgrade_dialog import update_all
-from .widgets import button, button_row, fill_table, loading_overlay, make_table, open_folder, selected_payload
+from .widgets import (button, button_row, fill_table, loading_overlay, make_table, open_folder, paint_support,
+                      selected_payload)
 
 
 FILE_FILTER = "requirements.txt or pyproject.toml (*.txt *.toml);;All files (*)"
@@ -133,8 +134,8 @@ class VenvsPage(QWidget):
         super().__init__()
         self.state, self.tasks, self.manage_packages = state, tasks, manage_packages
 
-        self.table = make_table(["Name", "Python", "Updates", "Jupyter kernel", "Location", "Base interpreter"],
-                                stretch=4)
+        self.table = make_table(["Name", "Python", "Support", "Updates", "Jupyter kernel", "Location",
+                                 "Base interpreter"], stretch=5)
         self._kernels: list[kernels.Kernel] = []
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.table.doubleClicked.connect(lambda _: self._manage())
@@ -201,11 +202,19 @@ class VenvsPage(QWidget):
         report = self.state.health.get(str(env.executable))
         return report.summary if report else ""
 
+    @staticmethod
+    def _support(env: VirtualEnv) -> str:
+        support = eol.support(env.version)
+        return support.label if support else ""
+
     def _render(self) -> None:
         self._kernels = kernels.list_kernels()
-        rows = [(e, (e.name, e.version, self._status(e), self._kernel_names(e), str(e.path), e.base or "?"))
+        rows = [(e, (e.name, e.version, self._support(e), self._status(e), self._kernel_names(e), str(e.path),
+                     e.base or "?"))
                 for e in self.state.envs]
         fill_table(self.table, rows)
+        for row in range(self.table.rowCount()):
+            paint_support(self.table.item(row, 2))
         self.table.setToolTip("Updates: result of the last scheduled check (File → Check environments now)")
         self._update_buttons()
         fill_table(self.conda_table, [(e, (e.name, e.version or "no Python", str(e.path)))

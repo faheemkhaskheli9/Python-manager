@@ -65,3 +65,47 @@ def test_imports(capsys, tmp_path):
     with pytest.raises(SystemExit) as exc:
         cli.main(["imports", str(project)])  # no environment in the project
     assert exc.value.code == 2
+
+
+def test_envs_report_support(capsys, tmp_path):
+    env = venvs.create_at(tmp_path / "proj" / ".venv", Path(sys.executable))
+    venvs.register(env.path)
+    code, out, _ = run(capsys, "envs", "--json")
+    entry = json.loads(out)[0]
+    assert entry["support"] in ("Supported", "Ends soon", "End of life")
+    assert "end_of_support" in entry
+
+
+def test_licenses(capsys, monkeypatch):
+    from python_manager.core import licenses
+
+    items = [licenses.PackageLicense("a", "1", "MIT", "License-Expression", ()),
+             licenses.PackageLicense("b", "2", "GPL-3.0-only", "License-Expression", ())]
+    monkeypatch.setattr(licenses, "scan", lambda python: items)
+    code, out, err = run(capsys, "licenses", sys.executable)
+    assert code == 0 and "GPL-3.0-only" in out and "Copyleft" in out
+    code, out, err = run(capsys, "licenses", sys.executable, "--fail-on", "copyleft", "--format", "csv")
+    assert code == 1 and out.startswith("Package,Version") and "b 2" in err
+    code, out, _ = run(capsys, "licenses", sys.executable, "--json", "--fail-on", "weak-copyleft")
+    assert code == 0 and [d["name"] for d in json.loads(out)] == ["a", "b"]
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["licenses", sys.executable, "--fail-on", "nope"])
+    assert exc.value.code == 2
+
+
+def test_export(capsys, tmp_path, monkeypatch):
+    env = venvs.create_at(tmp_path / "proj" / ".venv", Path(sys.executable))
+    monkeypatch.chdir(tmp_path / "proj")
+    code, out, _ = run(capsys, "export", "--json", "--include-tools")
+    assert code == 0
+    result = json.loads(out)
+    assert Path(result["path"]).name == "requirements.txt" and result["skipped"] == []
+    text = (tmp_path / "proj" / "requirements.txt").read_text()
+    assert text.startswith("# proj/.venv · Python ")
+    target = tmp_path / "pyproject.toml"
+    code, out, _ = run(capsys, "export", str(env.path), "--format", "pyproject", "-o", str(target))
+    assert code == 0 and "Saved" in out and "[project]" in target.read_text()
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["export"])
+    assert exc.value.code == 2
