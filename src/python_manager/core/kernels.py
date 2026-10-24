@@ -53,13 +53,13 @@ def user_data_dir() -> Path:
 
 
 def data_dirs() -> list[Path]:
-    """Jupyter data folders in search order: user, ``JUPYTER_PATH``, system.
+    """Jupyter data folders in search order: ``JUPYTER_PATH``, user, system.
 
     Kernels inside an environment (``<env>/share/jupyter``) are left out: only a Jupyter running
     from that environment sees them, and ipykernel puts a generic ``python3`` there.
     """
-    result = [user_data_dir()]
-    result += [Path(p) for p in os.environ.get("JUPYTER_PATH", "").split(os.pathsep) if p]
+    result = [Path(p) for p in os.environ.get("JUPYTER_PATH", "").split(os.pathsep) if p]
+    result.append(user_data_dir())
     if sys.platform == "win32":
         if os.environ.get("PROGRAMDATA"):
             result.append(Path(os.environ["PROGRAMDATA"]) / "jupyter")
@@ -73,11 +73,15 @@ def read_spec(folder: Path) -> Optional[Kernel]:
         spec = json.loads((folder / "kernel.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    argv = spec.get("argv") or []
+    if not isinstance(spec, dict) or not isinstance(spec.get("argv"), list):
+        return None
+    argv = spec["argv"]
     first = argv[0] if argv and isinstance(argv[0], str) else ""
     executable = Path(first) if first and (os.sep in first or "/" in first) else None
-    return Kernel(folder.name, spec.get("display_name") or folder.name, spec.get("language", ""),
-                  folder, executable)
+    display_name = spec.get("display_name")
+    language = spec.get("language")
+    return Kernel(folder.name, display_name if isinstance(display_name, str) and display_name else folder.name,
+                  language if isinstance(language, str) else "", folder, executable)
 
 
 def list_kernels() -> list[Kernel]:
