@@ -304,3 +304,28 @@ def test_disk_page_selects_and_deletes_old_downloads(app):
     wait_until(app, lambda: not archive.exists() and "Python download" not in rows() and not window.tasks.busy)
     QThreadPool.globalInstance().waitForDone(30000)
     window.close()
+
+
+def test_install_file_dialog_preview(app, tmp_path):
+    import sys
+    from pathlib import Path
+
+    from python_manager.ui.install_file_dialog import InstallFileDialog
+    from python_manager.ui.tasks import TaskManager
+
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text('[project]\nname = "app"\ndependencies = ["packaging", "surely-not-installed-pkg"]\n'
+                    '[project.optional-dependencies]\nextra = ["another-missing-pkg>=1"]\n')
+    window = QtWidgets.QWidget()
+    dialog = InstallFileDialog(Path(sys.executable), toml, TaskManager(window), window)
+    wait_until(app, lambda: dialog.checks)
+    assert {c.name: c.status for c in dialog.checks} == {"packaging": "OK", "surely-not-installed-pkg": "Missing"}
+    assert dialog.only == ["surely-not-installed-pkg"] and dialog.install_btn.isEnabled()
+
+    dialog.options[0][2].setChecked(True)
+    wait_until(app, lambda: len(dialog.checks) == 3)
+    assert dialog.source.extras == ("extra",)
+    assert dialog.only == ["surely-not-installed-pkg", "another-missing-pkg>=1"]
+    dialog.only_needed.setChecked(False)
+    assert dialog.only is None
+    QThreadPool.globalInstance().waitForDone(30000)

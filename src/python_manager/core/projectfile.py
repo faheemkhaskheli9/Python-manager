@@ -155,11 +155,49 @@ def pyproject_requirements(path: Path, extras: Iterable[str] = (), groups: Itera
     return result
 
 
+def is_pylock(path: Path) -> bool:
+    """``pylock.toml`` or ``pylock.<name>.toml`` (PEP 751)."""
+    return re.fullmatch(r"pylock(\.[^.]+)?\.toml", Path(path).name) is not None
+
+
+def _pylock_fallback(text: str) -> list[dict]:
+    """The name, version and marker of each ``[[packages]]`` entry, for Python < 3.11 (no tomllib)."""
+    result = []
+    for block in re.split(r"^\[\[packages\]\]\s*$", text, flags=re.M)[1:]:
+        block = re.split(r"^\[", block, maxsplit=1, flags=re.M)[0]
+        entry = {}
+        for key in ("name", "version", "marker"):
+            value = re.search(rf'^{key}\s*=\s*("(?:[^"\\]|\\.)*"|\'[^\']*\')', block, re.M)
+            if value:
+                entry[key] = _toml_string(value.group(1))
+        result.append(entry)
+    return result
+
+
+def pylock_requirements(path: Path) -> list[str]:
+    """``name==version`` for each package of a PEP 751 lock file, with its marker when it has one."""
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        import tomllib
+    except ImportError:
+        entries = _pylock_fallback(text)
+    else:
+        entries = tomllib.loads(text).get("packages", [])
+    result = []
+    for entry in entries:
+        name, version = entry.get("name"), entry.get("version")
+        if not name:
+            continue
+        spec = f"{name}=={version}" if version else name
+        result.append(f"{spec}; {entry['marker']}" if entry.get("marker") else spec)
+    return result
+
+
 def install_file(python: Path, path: Path, ctx: TaskContext = NULL) -> None:
-    """Install the packages listed in a requirements file or a pyproject.toml."""
+    """Install the packages listed in a requirements file, a pyproject.toml or a pylock.toml."""
     path = Path(path)
     if path.name.endswith(".toml"):
-        specs = pyproject_dependencies(path)
+        specs = pylock_requirements(path) if is_pylock(path) else pyproject_dependencies(path)
         if specs:
             packages.install(python, specs, ctx)
         else:

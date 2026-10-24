@@ -167,9 +167,11 @@ def _requirements_lines(path: Path, seen: set[str]) -> list[str]:
 
 
 def read_requirements(source: Path | Source) -> list[str]:
-    """Requirements listed in a requirements file (following ``-r`` includes) or a pyproject.toml."""
+    """Requirements listed in a requirements file (following ``-r`` includes), a pyproject.toml or a pylock.toml."""
     if not isinstance(source, Source):
         source = Source(Path(source))
+    if projectfile.is_pylock(source.path):
+        return projectfile.pylock_requirements(source.path)
     if source.path.name.endswith(".toml"):
         return projectfile.pyproject_requirements(source.path, source.extras, source.groups)
     return _requirements_lines(source.path, set())
@@ -333,6 +335,27 @@ def compare(requirements: list[str], python: Path, unlisted: bool = False) -> li
             if deps.normalize(dist.name) not in named:
                 result.append(Check(dist.name, dist.name, dist.version, UNLISTED))
     return result
+
+
+NEEDS_INSTALL = (MISSING, MISMATCH, UNCHECKED)
+
+
+def install_source(python: Path, source: Path | Source, only: Optional[list[str]] = None,
+                   ctx: TaskContext = NULL) -> None:
+    """Install the packages ``source`` lists, or just the requirements in ``only`` (from ``read_requirements``).
+
+    A whole requirements file goes to pip as ``-r`` so its options (indexes, hashes) still apply.
+    """
+    if not isinstance(source, Source):
+        source = Source(Path(source))
+    if only is None and not source.path.name.endswith(".toml"):
+        packages.install_requirements(python, source.path, ctx)
+        return
+    specs = read_requirements(source) if only is None else only
+    if specs:
+        packages.install(python, specs, ctx)
+    else:
+        ctx.log(f"Nothing to install from {source.label}.")
 
 
 def held_back(upgrades: list[packages.Upgrade], requirements: list[str]) -> dict[str, str]:

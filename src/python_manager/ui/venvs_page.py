@@ -35,7 +35,7 @@ from .widgets import (button, button_row, fill_table, loading_overlay, make_tabl
                       selected_payload)
 
 
-FILE_FILTER = "requirements.txt or pyproject.toml (*.txt *.toml);;All files (*)"
+FILE_FILTER = "requirements.txt, pyproject.toml or pylock.toml (*.txt *.toml);;All files (*)"
 
 
 class CreateEnvDialog(QDialog):
@@ -58,7 +58,7 @@ class CreateEnvDialog(QDialog):
         loc_row = QHBoxLayout()
         loc_row.addWidget(self.location, 1)
         loc_row.addWidget(button("Browse…", self._browse))
-        self.packages_file = QLineEdit(packages_file, placeholderText="Optional requirements.txt or pyproject.toml")
+        self.packages_file = QLineEdit(packages_file, placeholderText="Optional requirements.txt, pyproject.toml or pylock.toml")
         file_row = QHBoxLayout()
         file_row.addWidget(self.packages_file, 1)
         file_row.addWidget(button("Browse…", self._browse_file))
