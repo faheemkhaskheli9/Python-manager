@@ -140,6 +140,9 @@ class MainWindow(QMainWindow):
         about = QAction("About", self)
         about.triggered.connect(self._about)
         help_menu.addAction(about)
+        about_qt = QAction("About Qt", self)
+        about_qt.triggered.connect(lambda: QMessageBox.aboutQt(self))
+        help_menu.addAction(about_qt)
 
     def _settings(self) -> None:
         before = config.load()
@@ -270,7 +273,10 @@ class MainWindow(QMainWindow):
             self, "About Python Manager",
             f"<b>Python Manager {__version__}</b><p>Install Python versions, manage packages and "
             f"virtual environments.</p><p>Python builds: python-build-standalone.<br>"
-            f"Data folder: {paths.data_dir()}<br>Log file: {logs.log_file()}</p>")
+            f"Data folder: {paths.data_dir()}<br>Log file: {logs.log_file()}</p>"
+            f"<p>Released under the MIT licence. Built with Qt and PySide6 (Qt for Python), used "
+            f"under the GNU LGPL v3; see <i>Help → About Qt</i>. Release builds include the licence "
+            f"texts in their <code>licenses</code> folder.</p>")
 
     def closeEvent(self, event) -> None:
         if self.tasks.busy:

@@ -9,7 +9,14 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
 ### Added
+- Published on PyPI as `python-manager-gui`: `pipx install python-manager-gui`. Pushing a `v*` tag
+  also builds and publishes the package with trusted publishing; a manual run can publish to
+  TestPyPI. ([#25])
+- *Help → About Qt*, and the About dialog names the Qt and PySide6 licence (LGPL v3). Release builds
+  include the licence texts and the list of bundled packages in a `licenses` folder. ([#25])
 - Packages page: *Install from file…* also takes a `pyproject.toml` (choose its extras and dependency
   groups) or `pylock.toml`, and before installing from any of these or a `requirements.txt` shows
   which packages are missing, at the wrong version or already satisfied; by default only the
@@ -110,6 +117,9 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
   after filling; settings are read from disk only when the file changed. ([#4])
 - Environments named `.venv`, `venv` or `env` outside the app folder are listed as
   `<project>/.venv`. ([#3])
+- Depends on `PySide6-Essentials` instead of the full `PySide6`, which roughly halves the
+  download; only QtCore, QtGui and QtWidgets are used. ([#25])
+- The release workflow fails when the tag, `pyproject.toml` and `__version__` disagree. ([#25])
 
 ### Fixed
 - Rebuild: environments installed from a folder (editable), archive or VCS keep that source when
@@ -173,7 +183,8 @@ First version. These changes were committed directly to `main`, before pull requ
   unused. ([3653ddf])
 - Offline pytest suite and a CI workflow for Windows, macOS and Linux. ([a036314])
 
-[Unreleased]: https://github.com/faheemkhaskheli9/python-manager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/faheemkhaskheli9/python-manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/faheemkhaskheli9/python-manager/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/faheemkhaskheli9/python-manager/compare/3653ddf...v0.2.0
 [0.1.0]: https://github.com/faheemkhaskheli9/python-manager/commits/3653ddf
 [#1]: https://github.com/faheemkhaskheli9/python-manager/pull/1
@@ -196,3 +207,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [#13]: https://github.com/faheemkhaskheli9/python-manager/pull/13
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
+[#25]: https://github.com/faheemkhaskheli9/python-manager/pull/25
