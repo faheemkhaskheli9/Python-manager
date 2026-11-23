@@ -83,11 +83,21 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 
 | Packages | Projects |
 |---|---|
-| ![Packages](docs/screenshots/packages.png) | ![Projects](docs/screenshots/projects.png) |
+| ![Packages](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/packages.png) | ![Projects](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/projects.png) |
 | **Virtual environments** | **Disk usage** |
-| ![Virtual environments](docs/screenshots/virtual-environments.png) | ![Disk usage](docs/screenshots/disk-usage.png) |
+| ![Virtual environments](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/virtual-environments.png) | ![Disk usage](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/disk-usage.png) |
 
-## Run
+## Install
+
+```bash
+pipx install python-manager-gui     # or: pip install python-manager-gui
+python-manager                      # the app; python-manager-cli for the command line
+```
+
+Requires Python 3.9+; PySide6 is installed automatically. Ready-to-run builds that need no Python
+are under [Download](#download).
+
+## Run from source
 
 ```bash
 python -m venv .venv
@@ -95,8 +105,6 @@ python -m venv .venv
 pip install -e .[dev]
 python-manager          # or: python -m python_manager
 ```
-
-Requires Python 3.9+ and PySide6 (installed automatically).
 
 ## Command line
 
@@ -184,6 +192,11 @@ Ready-to-run builds for Windows, macOS (Apple silicon and Intel) and Linux are a
 [GitHub release](https://github.com/faheemkhaskheli9/python-manager/releases). Unzip and run
 *Python Manager*; no Python installation is needed.
 
+The builds are not code-signed. On macOS, right-click the app and choose *Open* the first time (or
+run `xattr -dr com.apple.quarantine "Python Manager.app"`); on Windows, choose *More info → Run
+anyway* if SmartScreen warns. The builds include Qt and PySide6, used under the LGPL v3; their
+licence texts are in the `licenses` folder.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md). Every pull request adds its entries under **Unreleased**, each
@@ -192,17 +205,25 @@ changes users never notice).
 
 ## Release
 
-Rename **Unreleased** in `CHANGELOG.md` to the new version (e.g. `## [0.2.0] - 2026-11-01`),
-bump `version` in `pyproject.toml` and `src/python_manager/__init__.py`, then push a version tag; the `release` workflow builds every platform with PyInstaller and publishes
-a release with the archives, using that changelog section as release notes:
+Rename **Unreleased** in `CHANGELOG.md` to the new version (e.g. `## [0.3.0] - 2026-11-23`) and add
+an empty **Unreleased** above it, bump `version` in `pyproject.toml` and
+`src/python_manager/__init__.py`, then push a version tag. The `release` workflow checks that the
+tag and both versions match, builds every platform with PyInstaller, publishes a GitHub release
+with the archives (that changelog section is the release notes) and publishes the package to PyPI:
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
+
+PyPI uses [trusted publishing](https://docs.pypi.org/trusted-publishers/): on pypi.org add a
+publisher for project `python-manager-gui` with this repository, workflow `release.yml` and
+environment `pypi`, and create the `pypi` environment under the repository's *Settings →
+Environments*. Do the same on test.pypi.org with environment `testpypi`, then run the workflow
+manually with *Publish the package to TestPyPI* ticked to try a release without tagging.
 
 Build locally:
 
 ```bash
-pip install . pyinstaller
+pip install . "pyinstaller>=6"
 pyinstaller --noconfirm --windowed --name "Python Manager" --collect-submodules python_manager src/python_manager/__main__.py
 ```

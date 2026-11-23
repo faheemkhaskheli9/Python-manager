@@ -1,0 +1,25 @@
+Python Manager - third-party notices
+====================================
+
+Python Manager is released under the MIT licence (see LICENSE.txt in this folder).
+
+The release builds bundle the following third-party software:
+
+Qt 6 and PySide6 / Shiboken6 (Qt for Python)
+  Copyright (C) The Qt Company Ltd. and other contributors.
+  Used under the GNU Lesser General Public License v3 (LGPL-3.0-only.txt), which
+  incorporates the GNU General Public License v3 (GPL-3.0-only.txt).
+  The Qt and PySide6 libraries are shipped as separate, unmodified shared libraries
+  and can be replaced with your own builds. Source code: https://download.qt.io/
+  and https://code.qt.io/
+
+Python
+  Copyright (c) Python Software Foundation. Used under the PSF License Agreement:
+  https://docs.python.org/3/license.html
+
+packaging
+  Used under the Apache License 2.0 or the BSD 2-Clause License:
+  https://github.com/pypa/packaging
+
+The full list of bundled packages and their versions can be produced with
+"pip list" in the build environment; see the release workflow in the source repository.
