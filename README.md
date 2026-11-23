@@ -1,5 +1,7 @@
 # Python Manager
 
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/faheemkhaskheli9/badge.svg)](https://hub.xerj.org/contributors/faheemkhaskheli9)
+
 A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a UI:
 
 - **Python versions** – browse, download, install and uninstall any CPython version

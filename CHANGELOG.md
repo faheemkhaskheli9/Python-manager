@@ -9,6 +9,10 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+### Changed
+
+- README shows the XERJ Corpus Hub contributor badge ([#26])
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
@@ -208,3 +212,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
 [#25]: https://github.com/faheemkhaskheli9/python-manager/pull/25
+[#26]: https://github.com/faheemkhaskheli9/python-manager/pull/26
