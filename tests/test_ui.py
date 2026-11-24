@@ -2,13 +2,15 @@
 
 import csv
 import os
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
-from PySide6.QtCore import QThreadPool  # noqa: E402
+from PySide6.QtCore import QEvent, QThreadPool  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from python_manager.core import config, licenses  # noqa: E402
@@ -25,8 +27,16 @@ def app(monkeypatch):
         monkeypatch.setattr(QMessageBox, name, lambda *a, _n=name, **k: shown.append((_n, a[1:3])))
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     application.shown_messages = shown
+    before = set(application.topLevelWidgets())
     yield application
     QThreadPool.globalInstance().waitForDone(30000)
+    application.processEvents()
+    # Delete this test's windows while the QApplication is alive; any left over are destroyed
+    # at interpreter exit, in no particular order, which can crash it.
+    for widget in application.topLevelWidgets():
+        if widget not in before:
+            widget.deleteLater()
+    application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     application.processEvents()
     theme.apply(theme.SYSTEM, application)
 
@@ -55,7 +65,14 @@ def test_main_window_pages(app, monkeypatch):
         app.processEvents()
         assert window.stack.currentIndex() == row
     wait_until(app, lambda: not window.tasks.busy)
-    assert window.packages.target.count() >= 1  # at least the Python running the tests
+    target = window.packages.target
+    assert target.count() >= 1  # at least the Python running the tests
+    # Measure the Python running the tests: the first one listed may be a system Python whose
+    # packages list no files (no size), e.g. on macOS.
+    me = Path(sys.executable).resolve()
+    index = next((i for i in range(target.count()) if target.itemData(i).executable.resolve() == me), None)
+    if index is not None and index != target.currentIndex():
+        target.setCurrentIndex(index)
     table = window.packages.table
     wait_until(app, lambda: window.packages._sizes)
     assert any(table.item(r, 5).text().endswith("B") for r in range(table.rowCount()))

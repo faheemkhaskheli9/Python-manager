@@ -100,7 +100,7 @@ def test_export(capsys, tmp_path, monkeypatch):
     assert code == 0
     result = json.loads(out)
     assert Path(result["path"]).name == "requirements.txt" and result["skipped"] == []
-    text = (tmp_path / "proj" / "requirements.txt").read_text()
+    text = (tmp_path / "proj" / "requirements.txt").read_text(encoding="utf-8")
     assert text.startswith("# proj/.venv · Python ")
     target = tmp_path / "pyproject.toml"
     code, out, _ = run(capsys, "export", str(env.path), "--format", "pyproject", "-o", str(target))

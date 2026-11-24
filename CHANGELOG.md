@@ -9,6 +9,17 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+### Changed
+
+- README shows the XERJ Corpus Hub contributor badge ([#26])
+
+### Fixed
+
+- Quitting while tasks are still running no longer prints "Signal source has been deleted" errors
+  or risks a crash on exit: tasks are cancelled and the window is closed before Qt shuts down ([#26])
+- Tests: no crash at exit on Linux, UTF-8 reads on Windows, sizes measured for the test Python on
+  macOS, and Python 3.9 tested on Ubuntu 24.04 ([#26])
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
@@ -208,3 +219,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
 [#25]: https://github.com/faheemkhaskheli9/python-manager/pull/25
+[#26]: https://github.com/faheemkhaskheli9/python-manager/pull/26

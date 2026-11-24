@@ -40,7 +40,7 @@ def fake_env(monkeypatch):
 
 def test_hashed_requirements(fake_env, tmp_path):
     result = lock.export(Path(sys.executable), lock.HASHES, tmp_path / "req.txt", "demo", "3.12.4")
-    text = result.path.read_text()
+    text = result.path.read_text(encoding="utf-8")
     assert result.packages == 2 and result.skipped == ["local_pkg==0.1"]
     assert f"requests==2.32.3 \\\n    --hash=sha256:{'a' * 64} \\\n    --hash=sha256:{'b' * 64}\n" in text
     assert "pip==" not in text
