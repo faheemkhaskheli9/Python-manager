@@ -329,3 +329,31 @@ def test_install_file_dialog_preview(app, tmp_path):
     dialog.only_needed.setChecked(False)
     assert dialog.only is None
     QThreadPool.globalInstance().waitForDone(30000)
+
+
+def test_path_dialog(app, monkeypatch):
+    from pathlib import Path
+
+    from python_manager.core import pathcheck
+    from python_manager.ui.path_dialog import PathDialog
+    from python_manager.ui.tasks import TaskManager
+
+    report = pathcheck.Report(
+        entries=[pathcheck.Entry("/usr/bin", True, False, ("python3",)), pathcheck.Entry("/gone", False, False)],
+        commands=[pathcheck.Command("python3", Path("/usr/bin/python3"), "3.12.1", "/usr"),
+                  pathcheck.Command("pip", None)],
+        problems=[pathcheck.Problem(pathcheck.WARNING, "pip installs into Python 3.11", "Use python3 -m pip")])
+    window = QtWidgets.QWidget()
+    dialog = PathDialog(report, TaskManager(window), window)
+    assert dialog.problems.rowCount() == 1 and dialog.commands.rowCount() == 2
+    assert dialog.commands.item(1, 1).text() == "not found"
+    assert dialog.entries.item(1, 3).text() == "missing"
+    assert "1 warning" in dialog.summary.text()
+    dialog.copy()
+    assert "pip installs into Python 3.11" in QApplication.clipboard().text()
+
+    monkeypatch.setattr(pathcheck, "check", lambda: pathcheck.Report())
+    dialog.refresh()
+    wait_until(app, lambda: dialog.report.problems == [])
+    assert dialog.problems.rowCount() == 0 and dialog.refresh_btn.isEnabled()
+    window.deleteLater()
