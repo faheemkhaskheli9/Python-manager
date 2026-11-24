@@ -22,6 +22,14 @@ class _Signals(QObject):
     failed = Signal(int, str, bool)
 
 
+def _emit(signal, *args) -> None:
+    """Emit from a worker thread; the receiver may already be gone if the app is quitting."""
+    try:
+        signal.emit(*args)
+    except RuntimeError:  # "Signal source has been deleted"
+        pass
+
+
 class _Job(QRunnable):
     def __init__(self, job_id: int, fn: Callable[[TaskContext], Any], signals: _Signals, ctx: TaskContext):
         super().__init__()
@@ -31,11 +39,11 @@ class _Job(QRunnable):
         try:
             result = self.fn(self.ctx)
         except Cancelled:
-            self.signals.failed.emit(self.job_id, "Cancelled", True)
+            _emit(self.signals.failed, self.job_id, "Cancelled", True)
         except Exception as exc:  # reported to the user, never crash the worker thread
-            self.signals.failed.emit(self.job_id, str(exc) or type(exc).__name__, False)
+            _emit(self.signals.failed, self.job_id, str(exc) or type(exc).__name__, False)
         else:
-            self.signals.done.emit(self.job_id, result)
+            _emit(self.signals.done, self.job_id, result)
 
 
 @dataclass
@@ -87,8 +95,8 @@ class TaskManager(QObject):
         job_id = next(self._ids)
         signals = self._signals
         ctx = TaskContext(
-            log=lambda msg: signals.log.emit(job_id, msg),
-            progress=lambda done, total: signals.progress.emit(job_id, done, total),
+            log=lambda msg: _emit(signals.log, job_id, msg),
+            progress=lambda done, total: _emit(signals.progress, job_id, done, total),
         )
         self._jobs[job_id] = _Entry(title, foreground, ctx, on_done, on_error)
         if not foreground:
@@ -110,6 +118,13 @@ class TaskManager(QObject):
         for entry in self._jobs.values():
             if entry.foreground:
                 entry.ctx.cancel()
+
+    def shutdown(self, timeout_ms: int = 3000) -> bool:
+        """Cancel every task, drop the queued ones and wait for the running ones (on quit)."""
+        for entry in self._jobs.values():
+            entry.ctx.cancel()
+        self._pool.clear()
+        return self._pool.waitForDone(timeout_ms)
 
     @Slot(int, str)
     def _on_log(self, job_id: int, message: str) -> None:

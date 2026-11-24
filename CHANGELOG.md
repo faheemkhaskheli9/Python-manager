@@ -9,9 +9,12 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-11-23
+## [0.3.0] - 2026-11-24
 
 ### Added
+- `python-manager --version` prints the version, and `python-manager --self-test` starts the app,
+  runs its event loop once and exits. The release workflow runs the self-test on each of the four
+  builds and checks they contain the licence texts. ([#27])
 - Published on PyPI as `python-manager-gui`: `pipx install python-manager-gui`. Pushing a `v*` tag
   also builds and publishes the package with trusted publishing; a manual run can publish to
   TestPyPI. ([#25])
@@ -120,6 +123,7 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 - Depends on `PySide6-Essentials` instead of the full `PySide6`, which roughly halves the
   download; only QtCore, QtGui and QtWidgets are used. ([#25])
 - The release workflow fails when the tag, `pyproject.toml` and `__version__` disagree. ([#25])
+- README shows the XERJ Corpus Hub contributor badge. ([#26])
 
 ### Fixed
 - Rebuild: environments installed from a folder (editable), archive or VCS keep that source when
@@ -134,6 +138,11 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
   non-list `argv`) is skipped instead of stopping the Virtual Environments page from loading, and
   `JUPYTER_PATH` folders now take precedence over the user folder, as in Jupyter. ([#9])
 - Security results of one environment no longer show up after switching to another. ([#3])
+- Quitting while tasks are still running no longer prints "Signal source has been deleted" errors
+  or risks a crash on exit: tasks are cancelled and the window is closed before Qt shuts down.
+  ([#26])
+- Tests: no crash at exit on Linux, UTF-8 reads on Windows, sizes measured for the test Python on
+  macOS, and Python 3.9 tested on Ubuntu 24.04. ([#26])
 
 ## [0.2.0] - 2026-10-22
 
@@ -208,3 +217,5 @@ First version. These changes were committed directly to `main`, before pull requ
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
 [#25]: https://github.com/faheemkhaskheli9/python-manager/pull/25
+[#26]: https://github.com/faheemkhaskheli9/python-manager/pull/26
+[#27]: https://github.com/faheemkhaskheli9/python-manager/pull/27
