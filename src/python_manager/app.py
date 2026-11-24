@@ -27,7 +27,12 @@ def main() -> int:
     theme.apply(config.get("theme"), app)
     window = MainWindow()
     window.show()
-    return app.exec()
+    code = app.exec()
+    # Stop the worker threads and delete the window while the QApplication still exists;
+    # otherwise both are torn down at interpreter exit in no particular order, which can crash.
+    window.tasks.shutdown()
+    del window
+    return code
 
 
 if __name__ == "__main__":

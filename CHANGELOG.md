@@ -13,6 +13,13 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 - README shows the XERJ Corpus Hub contributor badge ([#26])
 
+### Fixed
+
+- Quitting while tasks are still running no longer prints "Signal source has been deleted" errors
+  or risks a crash on exit: tasks are cancelled and the window is closed before Qt shuts down ([#26])
+- Tests: no crash at exit on Linux, UTF-8 reads on Windows, sizes measured for the test Python on
+  macOS, and Python 3.9 tested on Ubuntu 24.04 ([#26])
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
