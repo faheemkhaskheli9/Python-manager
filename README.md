@@ -89,6 +89,27 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
 | **Virtual environments** | **Disk usage** |
 | ![Virtual environments](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/virtual-environments.png) | ![Disk usage](https://raw.githubusercontent.com/faheemkhaskheli9/python-manager/main/docs/screenshots/disk-usage.png) |
 
+## How it compares
+
+Python Manager is a desktop UI over the standard tools, not a replacement for them: it uses uv
+when it is on `PATH` and pip and `venv` otherwise, and the environments it creates are ordinary
+virtual environments that keep working without the app.
+
+| | Python Manager | uv | pyenv / pyenv-win | Anaconda Navigator |
+|---|---|---|---|---|
+| Interface | Desktop app, plus `python-manager-cli` | Command line | Command line | Desktop app |
+| Installing Pythons | Prebuilt python-build-standalone builds, all platforms | Same builds (`uv python install`) | Compiled from source (pyenv); installers (pyenv-win) | Conda packages |
+| Changes `PATH` or shell setup | No | Can add `python3.x` to `~/.local/bin` | Shims in `PATH` | Optional |
+| Packages and environments | pip/uv, venv | pip-compatible, venv, projects | Not covered | conda (pip inside conda) |
+| All environments on the machine in one list | Yes, conda shown read-only | No | No | Conda environments only |
+| Scheduled outdated/vulnerability checks | Yes (OSV) | No | No | No |
+| Licence report, SBOM, `pylock.toml` export | Yes | From a project's lock file (`uv export`) | No | No |
+| Disk usage and stale-environment clean-up | Yes | `uv cache` | No | No |
+
+Use uv or pyenv when you live in the terminal and script everything. Python Manager is for seeing
+and fixing every Python and environment on a machine in one place: teaching, support, or a
+workstation that has collected years of virtual environments.
+
 ## Install
 
 ```bash
