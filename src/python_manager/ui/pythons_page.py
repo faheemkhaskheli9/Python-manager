@@ -16,11 +16,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..core import config, eol, paths, python_versions, venvs
+from ..core import config, eol, paths, pathcheck, python_versions, venvs
 from ..core.interpreters import MANAGED, Interpreter
 from ..core.python_versions import RemotePython
 from ..core.venvs import VirtualEnv
 from . import theme
+from .path_dialog import PathDialog
 from .state import AppState
 from .tasks import TaskManager
 from .widgets import (button, button_row, fill_table, loading_overlay, make_table, open_folder, paint_support,
@@ -47,7 +48,9 @@ class PythonsPage(QWidget):
         lay = QVBoxLayout(installed_box)
         lay.addWidget(self.installed)
         lay.addLayout(button_row(self.update_btn, self.uninstall_btn, self.folder_btn,
-                                 button("Rescan system", lambda: self.state.refresh(include_system=True))))
+                                 button("Rescan system", lambda: self.state.refresh(include_system=True)),
+                                 button("PATH check…", self.path_check,
+                                        "Which python and pip PATH runs, and script folders missing from PATH")))
 
         # Downloadable versions
         self.filter = QLineEdit(placeholderText="Filter, e.g. 3.12")
@@ -103,6 +106,10 @@ class PythonsPage(QWidget):
             self.load_available()
 
     # Installed -------------------------------------------------------------
+
+    def path_check(self) -> None:
+        self.tasks.run("Checking PATH", lambda ctx: pathcheck.check(),
+                       lambda report: PathDialog(report, self.tasks, self).exec())
 
     def _render_installed(self) -> None:
         interpreters = self.state.interpreters(include_envs=False)

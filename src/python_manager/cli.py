@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NoReturn, Optional, Sequence
 
 from . import __version__
-from .core import eol, health, imports, interpreters, licenses, lock, projects, python_versions, venvs
+from .core import eol, health, imports, interpreters, licenses, lock, pathcheck, projects, python_versions, venvs
 from .core.tasks import TaskContext
 
 
@@ -194,6 +194,15 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_path(args: argparse.Namespace) -> int:
+    report = pathcheck.check()
+    if args.json:
+        print(json.dumps(report.to_json(), indent=2))
+    else:
+        print(report.to_text(), end="")
+    return 1 if report.warnings else 0
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="python-manager-cli", description="Python Manager from the command line.")
     root.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -232,6 +241,8 @@ def parser() -> argparse.ArgumentParser:
                    help="; ".join(f"{f.key}: {f.label}" for f in lock.FORMATS))
     p.add_argument("-o", "--output", help="file to write (default: the format's usual name in this folder)")
     p.add_argument("--include-tools", action="store_true", help="keep pip, setuptools and wheel")
+    command("path", cmd_path, "Show which python and pip PATH runs, what they shadow and script folders "
+                              "missing from PATH. Exits 1 when there is a warning.")
     return root
 
 

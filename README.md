@@ -7,6 +7,10 @@ A cross-platform desktop app (Windows, macOS, Linux) for managing Python from a 
   Installed Pythons with a newer patch release are flagged and updated in one click, and the
   environments on the old one can be rebuilt on the new one right away. A *Support* column shows
   which Pythons and environments are past end of life or will be within six months.
+- **PATH check** – *PATH check…* on the Pythons page shows which `python`, `python3`, `pip`, `uv`
+  and `pipx` a terminal runs, the copies they shadow, and warns when `pip` belongs to another Python
+  than `python`, when `python` is the Microsoft Store alias, and when the folders `pip install --user`,
+  `uv tool` or pipx put commands in are not on PATH. *Copy report* copies it for a bug report.
 - **Packages** – list, install (any version from PyPI), upgrade, uninstall and download packages
   for any interpreter or virtual environment. Install from a wheel or sdist, or from a
   `requirements.txt`, `pyproject.toml` (with chosen extras and dependency groups) or `pylock.toml`
@@ -119,12 +123,14 @@ python-manager-cli imports [PROJECT]    # imports vs requirements (-r FILE, --py
 python-manager-cli licenses [ENV]       # licence of each package (--format csv|markdown|json,
                                         #   --fail-on copyleft,weak-copyleft,other,unknown)
 python-manager-cli export [ENV]         # save the packages (--format pinned|top|hashes|pylock|pyproject|sbom, -o FILE)
+python-manager-cli path                 # which python and pip PATH runs, shadowed copies, folders missing from PATH
 ```
 
 `ENV` is an interpreter, an environment folder or an environment's name; `licenses` and `export`
 default to the current folder's `.venv`, `venv` or `env`. `check` exits with 1 when something
 needs attention and 2 when a check failed; `imports` exits with 1 when an import is not installed
-or not declared; `licenses` exits with 1 when a package is in a `--fail-on` category.
+or not declared; `licenses` exits with 1 when a package is in a `--fail-on` category; `path` exits
+with 1 when it has a warning.
 
 ## How it works
 
@@ -152,6 +158,7 @@ or not declared; `licenses` exits with 1 when a package is in a `--fail-on` cate
 | Jupyter kernels | Kernel specs are read from Jupyter's `JUPYTER_PATH`, user and system data folders, in that order; adding one runs `python -m ipykernel install --user` in the environment, removing one deletes its folder. |
 | Licenses | Read from installed metadata inside the environment: `License-Expression` (PEP 639) first, then `License ::` classifiers, then the `License` field. Nothing is sent over the network. |
 | Conda | Found without running conda: `~/.conda/environments.txt`, `CONDA_PREFIX`, `CONDA_EXE`, `MAMBA_ROOT_PREFIX` and the usual install folders (`miniconda3`, `anaconda3`, `miniforge3`, …). The Python version is read from `conda-meta`. |
+| PATH check | PATH is searched the way a shell does (`PATHEXT` on Windows); copies that link to the same file count once. Each `python` is asked for its version, prefix and user scripts folder; `pip --version` is compared with `python -m pip --version`. Tool folders come from `uv tool dir --bin` and `pipx environment --value PIPX_BIN_DIR`. |
 | Disk usage | Folder sizes without following symlinks. pip's cache honours `PIP_CACHE_DIR`; uv's comes from `uv cache dir` and is cleaned with `uv cache clean`. |
 
 App data (installed Pythons, environments, download cache, `config.json`, `logs/`):
@@ -171,7 +178,7 @@ when listing many releases.
 src/python_manager/
   core/   # UI-independent logic (no Qt): python_versions, packages, deps, venvs, projects, projectfile,
           # lock, security, licenses, sizes, compare, history, imports, health, disk, tools, conda,
-          # kernels, eol, logs
+          # kernels, eol, pathcheck, logs
   cli.py  # python-manager-cli
   ui/     # PySide6 widgets: one page per feature, background task runner
 tests/    # pytest suite for core plus offscreen UI smoke tests

@@ -9,6 +9,13 @@ On release, **Unreleased** is renamed to the new version; that section becomes t
 
 ## [Unreleased]
 
+### Added
+- PATH check: *PATH check…* on the Pythons page and `python-manager-cli path` show which `python`,
+  `python3`, `pip`, `pip3`, `uv` and `pipx` PATH runs and the copies they shadow, and warn when
+  `pip` installs into another Python than `python`, when `python` is the Microsoft Store alias, and
+  when the `pip install --user`, `uv tool` or pipx command folder is not on PATH; missing and
+  repeated PATH folders are noted. `path` exits 1 on a warning. ([#28])
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
@@ -208,3 +215,4 @@ First version. These changes were committed directly to `main`, before pull requ
 [#12]: https://github.com/faheemkhaskheli9/python-manager/pull/12
 [#11]: https://github.com/faheemkhaskheli9/python-manager/pull/11
 [#25]: https://github.com/faheemkhaskheli9/python-manager/pull/25
+[#28]: https://github.com/faheemkhaskheli9/python-manager/pull/28
